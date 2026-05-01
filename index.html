@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CeleriTech Marketing Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); color: #1e293b; overflow-x: hidden; }
+        html { overflow-x: hidden; }
+        .glass-panel { background: rgba(255,255,255,0.35); backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%); border: 1px solid rgba(255,255,255,0.5); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.03); }
+        .glass-card { background: rgba(255,255,255,0.5); backdrop-filter: blur(25px); border: 1px solid rgba(255,255,255,0.6); border-radius: 24px; transition: all 0.3s cubic-bezier(0.4,0,0.2,1); }
+        @media (min-width:768px) { .glass-card { border-radius: 28px; } }
+        .glass-card-hover:hover { background: rgba(255,255,255,0.8); transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.03); }
+        .sidebar-item { display:flex; align-items:center; gap:10px; padding:10px 16px; border-radius:16px; color:#64748b; font-weight:500; transition:all 0.3s ease; font-size:14px; white-space:nowrap; flex-shrink:0; }
+        @media (min-width:768px) { .sidebar-item { padding:12px 18px; } }
+        .sidebar-item.active { background:white; color:#1e293b; box-shadow:0 8px 20px rgba(0,0,0,0.04); }
+        .sidebar-item.active svg { color:#f97316; }
+        .glass-select { appearance:none; background:rgba(255,255,255,0.6); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.8); padding:8px 32px 8px 14px; border-radius:12px; font-size:13px; font-weight:600; color:#475569; cursor:pointer; outline:none; }
+        .campaign-pill { padding:6px 16px; border-radius:10px; font-size:12px; font-weight:600; color:#64748b; background:rgba(255,255,255,0.3); border:1px solid rgba(255,255,255,0.5); transition:all 0.2s ease; white-space:nowrap; }
+        .campaign-pill.active { background:#f97316; color:white; border-color:#f97316; }
+        .modal-backdrop { background:rgba(226,232,240,0.4); backdrop-filter:blur(15px); -webkit-backdrop-filter:blur(15px); display:none; align-items:center; justify-content:center; position:fixed; inset:0; z-index:100; padding:16px; }
+        .scroll-container::-webkit-scrollbar { width:4px; height:4px; }
+        .scroll-container::-webkit-scrollbar-thumb { background:rgba(0,0,0,0.08); border-radius:10px; }
+        .tab-content, .campaign-content { display:none; height:100%; }
+        .tab-content.active, .campaign-content.active { display:flex; flex-direction:column; animation:fadeIn 0.4s ease; }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        .mini-bar { width:4px; background:#fb923c; border-radius:2px; opacity:0.15; }
+        .mini-bar.active { opacity:0.8; }
+    </style>
+</head>
+<body class="min-h-[100dvh] w-full flex md:items-center justify-center md:p-4 lg:p-8 md:overflow-hidden overflow-x-hidden">
+<div class="glass-panel w-full max-w-[1400px] min-h-[100dvh] md:min-h-0 md:h-[95vh] rounded-none md:rounded-[40px] p-3 md:p-6 flex flex-col md:flex-row gap-3 md:gap-6 md:overflow-hidden overflow-x-hidden">
+<aside class="w-full md:w-60 flex flex-col shrink-0 border-b md:border-b-0 md:border-r border-white/20 md:pr-4 z-50 relative">
+<div class="flex items-center justify-between md:flex-col md:items-start gap-2 md:gap-4 mb-1 md:mb-10 px-1 md:px-2 pt-1 md:pt-0">
+<div class="flex items-center gap-3">
+<img src="A-color.png" alt="CeleriTech Logo" class="h-6 md:h-9 object-contain shrink-0" onerror="this.src='https://placehold.co/180x50/f97316/ffffff?text=CeleriTech'">
+<h1 class="md:hidden text-[10px] font-black tracking-widest text-slate-500 uppercase mt-1">Marketing Report</h1>
+</div>
+<button id="mobileMenuBtn" class="md:hidden text-slate-500 p-2 hover:bg-slate-200/50 rounded-lg transition-colors focus:outline-none" onclick="toggleMobileMenu()">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+</button>
+<div class="hidden md:block h-px w-full bg-gradient-to-r from-orange-500/50 to-transparent"></div>
+<h1 class="hidden md:block text-[10px] md:text-xs font-black tracking-widest text-slate-500 uppercase">Marketing Report</h1>
+</div>
+<nav id="sidebarNav" class="hidden md:flex absolute md:static top-full left-0 w-full md:w-auto bg-white/95 md:bg-transparent backdrop-blur-2xl md:backdrop-blur-none shadow-2xl md:shadow-none border-b border-white/50 md:border-none p-4 md:p-0 rounded-b-3xl md:rounded-none flex-col gap-2 z-50 transition-all origin-top">
+<button onclick="switchTab('summary')" id="btn-summary" class="sidebar-item active">
+<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z"></path></svg>
+Summary
+</button>
+<button onclick="switchTab('emails')" id="btn-emails" class="sidebar-item">
+<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+Emails
+</button>
+<button onclick="switchTab('linkedin')" id="btn-linkedin" class="sidebar-item">
+<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+LinkedIn Outreach
+</button>
+</nav>
+</aside>
+<main class="flex-1 flex flex-col gap-4 overflow-visible md:overflow-hidden relative z-10">
+<div class="flex flex-col sm:flex-row sm:items-center gap-2 md:gap-3 w-full xl:w-auto">
+<h2 class="text-xl md:text-2xl font-bold text-slate-800 hidden sm:block">Welcome</h2>
+<div id="weekSelector" class="flex items-center gap-2 bg-white/50 backdrop-blur-md border border-white/80 rounded-xl px-3 shadow-sm w-full sm:w-auto">
+<svg class="w-4 h-4 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+<select class="bg-transparent border-none outline-none text-sm font-bold text-slate-700 py-2.5 cursor-pointer appearance-none pr-6 w-full" id="dateRangeSelect" onchange="handleWeekChange(this.value)" style="background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E&quot;); background-repeat: no-repeat; background-position: right center; background-size: 14px;">
+<optgroup label="Quick Select">
+<option value="all-time">All Time</option>
+<option value="1-year">Past 1 Year</option>
+<option value="3-months">Past 3 Months</option>
+<option value="1-month">Past 1 Month</option>
+<option value="2-weeks">Past 2 Weeks</option>
+<option value="1-week" selected>Past 1 Week</option>
+</optgroup>
+<optgroup label="Specific Weeks">
+<option value="apr-27">Apr 27 - May 03</option>
+<option value="apr-20">Apr 20 - 26</option>
+<option value="apr-13">April 13 - 19</option>
+<option value="apr-06">April 06 - 12</option>
+<option value="mar-30">March 30 - April 05</option>
+<option value="mar-23">March 23 - 29</option>
+<option value="mar-16">March 16 - 22</option>
+<option value="mar-09">March 09 - 15</option>
+<option value="mar-02">March 02 - 08</option>
+<option value="feb-23">February 23 - 29</option>
+</optgroup>
+</select>
+</div>
+</div>
+<div class="relative w-full xl:w-auto">
+<input type="text" placeholder="Search..." class="w-full xl:w-60 h-10 bg-white/50 border border-white/80 rounded-xl px-10 text-xs focus:outline-none focus:bg-white/80 transition-all text-slate-600">
+<svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+</div>
+<div class="flex-1 overflow-visible md:overflow-y-auto overflow-x-hidden scroll-container md:pr-2 pb-10 md:pb-2 max-w-full">
+<!-- Tab: Summary -->
+<section id="tab-summary" class="tab-content active space-y-4">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<div class="glass-card p-5 md:p-6">
+<div class="flex justify-between items-start mb-4">
+<div>
+<p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Weekly Outreach</p>
+<h3 class="text-2xl md:text-3xl font-black text-slate-800 tracking-tight" id="outreachSentCount">0 Sent</h3>
+</div>
+<div class="w-8 h-8 md:w-9 md:h-9 bg-orange-50 rounded-lg flex items-center justify-center text-orange-500 shrink-0">
+<svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12"></path></svg>
+</div>
+</div>
+<div class="flex items-end gap-1 h-10 md:h-12 mb-4">
+<div class="mini-bar h-[20%] active"></div><div class="mini-bar h-[10%] active"></div><div class="mini-bar h-[30%] active"></div><div class="mini-bar h-[25%] active"></div><div class="mini-bar h-[40%] active"></div><div class="mini-bar h-[45%] active"></div><div class="mini-bar h-[22%] active"></div><div class="mini-bar h-[32%] active"></div><div class="mini-bar h-[42%] active"></div><div class="mini-bar h-[15%]"></div><div class="mini-bar h-[37%]"></div><div class="mini-bar h-[27%]"></div><div class="mini-bar h-[47%]"></div><div class="mini-bar h-[30%]"></div>
+</div>
+<div class="bg-orange-50/40 rounded-xl p-3 flex flex-col sm:flex-row sm:justify-between sm:items-center border border-orange-100/50 gap-2">
+<span class="text-[10px] sm:text-xs font-bold text-orange-600" id="outreachStatus">Calculated from Email Tabs</span>
+<span class="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-tighter text-left sm:text-right" id="outreachBreakdown">Enterpryze: 0 | Food: 0 | ERP: 0</span>
+</div>
+</div>
+<div onclick="toggleModal(true)" class="glass-card glass-card-hover p-5 md:p-6 cursor-pointer group">
+<div class="flex justify-between items-start mb-4">
+<div>
+<p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">New Pipeline</p>
+<h3 class="text-2xl md:text-3xl font-black text-slate-800 tracking-tight" id="pipelineLeadCount">2 Leads</h3>
+</div>
+<div class="w-8 h-8 md:w-9 md:h-9 bg-orange-50 rounded-lg flex items-center justify-center text-orange-500 shrink-0">
+<svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+</div>
+</div>
+<div class="flex items-center gap-3 mb-4 md:mb-6">
+<div class="bg-orange-50 text-orange-600 text-[9px] font-bold px-3 py-1 rounded-full flex items-center gap-2 border border-orange-100">
+<span class="w-1 h-1 bg-orange-500 rounded-full animate-pulse"></span>
+ACTIVE PIPELINE
+</div>
+</div>
+<p class="text-[10px] md:text-[11px] text-slate-400 font-medium italic underline">View lead detailed history</p>
+</div>
+
+</div>
+<!-- Lead Intake Schedule Chart -->
+<div class="glass-card p-4 md:p-6">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 md:mb-6 gap-2">
+<div>
+<h4 class="text-base md:text-lg font-bold text-slate-800">Lead Intake Schedule</h4>
+<p class="text-[10px] md:text-[11px] text-slate-400 font-medium" id="chartDateContext">Tracking arrival dates for Mar 30 - Apr 05</p>
+</div>
+</div>
+<div class="h-[220px] md:h-[280px] w-full">
+<canvas id="leadsSummaryChart"></canvas>
+</div>
+</div>
+</section>
+<!-- Tab: Emails -->
+<section id="tab-emails" class="tab-content space-y-4">
+<div class="flex overflow-x-auto scroll-container gap-2 mb-2 pb-1 shrink-0">
+<button onclick="switchCampaign('enterpryze')" id="pill-enterpryze" class="campaign-pill active">Enterpryze</button>
+<button onclick="switchCampaign('food')" id="pill-food" class="campaign-pill">Food Manufacturer</button>
+<button onclick="switchCampaign('erp')" id="pill-erp" class="campaign-pill">ERP Qualified</button>
+</div>
+<div id="campaign-enterpryze" class="campaign-content active space-y-4">
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Emails Sent</p><p class="text-xl md:text-2xl font-black text-slate-800" id="entSentCount">0</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Open Rate</p><p class="text-xl md:text-2xl font-black text-orange-500" id="entOpenRate">0%</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Click Rate</p><p class="text-xl md:text-2xl font-black text-slate-800" id="entClickRate">0%</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Reply Rate</p><p class="text-xl md:text-2xl font-black text-emerald-500" id="entReplyRate">0%</p></div>
+</div>
+</div>
+<div id="campaign-food" class="campaign-content space-y-4">
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1" id="foodLabel">Email Sent</p><p class="text-xl md:text-2xl font-black text-slate-800" id="foodSentCount">0</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Open Rate</p><p class="text-xl md:text-2xl font-black text-orange-500" id="foodOpenRate">0%</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Click Rate</p><p class="text-xl md:text-2xl font-black text-slate-800" id="foodClickRate">0%</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Reply Rate</p><p class="text-xl md:text-2xl font-black text-emerald-500" id="foodReplyRate">0%</p></div>
+</div>
+</div>
+<div id="campaign-erp" class="campaign-content space-y-4">
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Emails Sent</p><p class="text-xl md:text-2xl font-black text-slate-800" id="erpSentCount">0</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Open Rate</p><p class="text-xl md:text-2xl font-black text-orange-500" id="erpOpenRate">0%</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Click Rate</p><p class="text-xl md:text-2xl font-black text-slate-800" id="erpClickRate">0%</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Reply Rate</p><p class="text-xl md:text-2xl font-black text-emerald-500" id="erpReplyRate">0%</p></div>
+</div>
+</div>
+</section>
+<!-- Tab: LinkedIn -->
+<section id="tab-linkedin" class="tab-content space-y-4">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+<div class="glass-card p-5 md:p-6 flex flex-col">
+<div class="flex items-center justify-between mb-4 md:mb-6">
+<h3 class="text-base md:text-lg font-bold text-slate-800 tracking-tight">Number of Invitations</h3>
+<div class="text-orange-500"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg></div>
+</div>
+<div class="space-y-3 md:space-y-4">
+<div class="flex items-center justify-between py-2 border-b border-slate-100/50"><span class="text-xs md:text-sm font-medium text-slate-500">Invitations Sent</span><span class="text-lg md:text-xl font-black text-slate-800">418</span></div>
+<div class="flex items-center justify-between py-2 border-b border-slate-100/50"><span class="text-xs md:text-sm font-medium text-slate-500">Invitations Accepted</span><span class="text-lg md:text-xl font-black text-emerald-500">66</span></div>
+<div class="flex items-center justify-between py-2"><span class="text-xs md:text-sm font-medium text-slate-500">Acceptance Rate</span><span class="text-lg md:text-xl font-black text-slate-800">15.8%</span></div>
+</div>
+</div>
+<div class="glass-card p-5 md:p-6 flex flex-col">
+<div class="flex items-center justify-between mb-4 md:mb-6">
+<h3 class="text-base md:text-lg font-bold text-slate-800 tracking-tight">Number of Messages</h3>
+<div class="text-orange-500"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg></div>
+</div>
+<div class="space-y-3 md:space-y-4">
+<div class="flex items-center justify-between py-2 border-b border-slate-100/50"><span class="text-xs md:text-sm font-medium text-slate-500">Leads contacted</span><span class="text-lg md:text-xl font-black text-slate-800">64</span></div>
+<div onclick="toggleReplyModal(true)" class="flex items-center justify-between py-2 border-b border-slate-100/50 cursor-pointer hover:bg-slate-50/50 rounded-lg px-2 -mx-2 transition-colors group">
+<span class="text-xs md:text-sm font-medium text-slate-500 group-hover:text-orange-500">Leads replies</span>
+<div class="flex items-center gap-2"><span class="text-lg md:text-xl font-black text-emerald-500">10</span><svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></div>
+</div>
+<div class="flex items-center justify-between py-2 border-b border-slate-100/50"><span class="text-xs md:text-sm font-medium text-emerald-600">Positive Replies</span><span class="text-lg md:text-xl font-black text-emerald-500">0</span></div>
+<div class="flex items-center justify-between py-2 border-b border-slate-100/50"><span class="text-xs md:text-sm font-medium text-rose-600">Negative Replies</span><span class="text-lg md:text-xl font-black text-rose-500">10</span></div>
+<div class="flex items-center justify-between py-2"><span class="text-xs md:text-sm font-medium text-slate-500">Reply Rate</span><span class="text-lg md:text-xl font-black text-slate-800">15.6%</span></div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+<!-- Modals -->
+<div id="leadsModal" class="modal-backdrop" onclick="if(event.target == this) toggleModal(false)">
+<div class="bg-white/90 backdrop-blur-2xl border border-white rounded-[32px] p-5 md:p-8 w-full max-w-[700px] shadow-2xl relative max-h-[90vh] overflow-y-auto scroll-container">
+<button onclick="toggleModal(false)" class="absolute top-4 right-4 md:top-6 md:right-6 text-slate-400 hover:text-slate-600 transition-colors p-2 bg-slate-100/50 rounded-full"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+<header class="mb-4 md:mb-6 pr-8"><h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">Lead Analysis</h3><p class="text-[10px] md:text-[11px] font-bold text-orange-500 uppercase tracking-widest mt-1" id="modalWeekLabel">Active Week: March 30 - Apr 05</p></header>
+<div id="leadsModalContent" class="space-y-4"></div>
+</div>
+</div>
+<div id="replyModal" class="modal-backdrop" onclick="if(event.target == this) toggleReplyModal(false)">
+<div class="bg-white/90 backdrop-blur-2xl border border-white rounded-[32px] p-5 md:p-8 w-full max-w-[600px] shadow-2xl relative max-h-[90vh] overflow-y-auto scroll-container">
+<button onclick="toggleReplyModal(false)" class="absolute top-4 right-4 md:top-6 md:right-6 text-slate-400 hover:text-slate-600 transition-colors p-2 bg-slate-100/50 rounded-full"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+<header class="mb-4 md:mb-6 pr-8"><h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">LinkedIn Reply Log</h3><p class="text-[10px] md:text-[11px] font-bold text-orange-500 uppercase tracking-widest mt-1">Recent Message Interactions</p></header>
+<div class="space-y-3 md:space-y-4">
+<div class="bg-white/60 border border-slate-100 p-4 md:p-5 rounded-[24px] space-y-3 md:space-y-4 shadow-sm">
+<div class="flex flex-col sm:flex-row justify-between sm:items-start border-b border-slate-100 pb-3 gap-2"><div><h4 class="text-lg md:text-xl font-bold text-slate-800">Pablo Ramirez</h4><p class="text-[9px] md:text-[10px] font-black text-orange-500 uppercase mt-1">Molinos el Pais</p></div><div class="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-1 w-full sm:w-auto"><span class="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded uppercase">Reply Received</span><span class="text-[9px] font-bold text-slate-400">Apr 23, 02:49 PM</span></div></div>
+<div class="bg-orange-50/30 p-3 md:p-4 rounded-xl border border-orange-100/50"><p class="text-xs md:text-sm text-slate-500 font-medium italic">Message preview unavailable...</p></div>
+</div>
+<div class="bg-white/60 border border-slate-100 p-4 md:p-5 rounded-[24px] space-y-3 md:space-y-4 shadow-sm">
+<div class="flex flex-col sm:flex-row justify-between sm:items-start border-b border-slate-100 pb-3 gap-2"><div><h4 class="text-lg md:text-xl font-bold text-slate-800">Sangller</h4><p class="text-[9px] md:text-[10px] font-black text-orange-500 uppercase mt-1">Unknown</p></div><div class="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-1 w-full sm:w-auto"><span class="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded uppercase">Positive Reply</span><span class="text-[9px] font-bold text-slate-400">Apr 13, 09:01 PM</span></div></div>
+<div class="bg-emerald-50/40 p-3 md:p-4 rounded-xl border border-emerald-100/50"><p class="text-xs md:text-sm text-emerald-800 font-medium italic">"I want to know more"</p></div>
+</div>
+<div class="bg-white/60 border border-slate-100 p-4 md:p-5 rounded-[24px] space-y-3 md:space-y-4 shadow-sm">
+<div class="flex flex-col sm:flex-row justify-between sm:items-start border-b border-slate-100 pb-3 gap-2"><div><h4 class="text-lg md:text-xl font-bold text-slate-800">Michael Merida</h4><p class="text-[9px] md:text-[10px] font-black text-orange-500 uppercase mt-1">Eternal Waters</p></div><span class="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded uppercase self-start">Reply Received</span></div>
+<div class="bg-orange-50/30 p-3 md:p-4 rounded-xl border border-orange-100/50"><p class="text-xs md:text-sm text-slate-700 font-medium italic">"No thank you"</p></div>
+</div>
+<div class="bg-white/60 border border-slate-100 p-4 md:p-5 rounded-[24px] space-y-3 md:space-y-4 shadow-sm">
+<div class="flex flex-col sm:flex-row justify-between sm:items-start border-b border-slate-100 pb-3 gap-2"><div><h4 class="text-lg md:text-xl font-bold text-slate-800">Rick Johnston</h4><p class="text-[9px] md:text-[10px] font-black text-orange-500 uppercase mt-1">Full Harvest</p></div><span class="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded uppercase self-start">Reply Received</span></div>
+<div class="bg-orange-50/30 p-3 md:p-4 rounded-xl border border-orange-100/50"><p class="text-xs md:text-sm text-slate-700 font-medium italic">"Claudia - I am no longer w Full Harvest."</p></div>
+</div>
+</div>
+</div>
+</div>
+<div id="leadDetailsModal" class="modal-backdrop" onclick="if(event.target == this) toggleLeadDetailsModal(false)">
+<div class="bg-white/90 backdrop-blur-2xl border border-white rounded-[32px] p-5 md:p-8 w-full max-w-[600px] shadow-2xl relative max-h-[90vh] overflow-y-auto scroll-container">
+<button onclick="toggleLeadDetailsModal(false)" class="absolute top-4 right-4 md:top-6 md:right-6 text-slate-400 hover:text-slate-600 transition-colors p-2 bg-slate-100/50 rounded-full"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+<header class="mb-4 md:mb-6 pr-8"><h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight" id="detailName">Lead Name</h3><p class="text-[10px] md:text-[11px] font-bold text-orange-500 uppercase tracking-widest mt-1" id="detailBusiness">Business Name</p></header>
+<div id="leadSpecificDetails" class="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4"></div>
+</div>
+</div>
+<script>
+let summaryChart = null;
+let currentViewData = null;
+const allWeeksInOrder = ['feb-23','mar-02','mar-09','mar-16','mar-23','mar-30','apr-06','apr-13','apr-20','apr-27'];
+
+const leadsByWeek = {
+'apr-27': [
+{ name:'Said Hussein', source:'Meta ads', pipeline:'FDA', date:'Apr 27', email:'isseh@cosmopolitanacare.com', business:'Cosmopolitan & Associates Inc', phone:'(612) 459-9667', details:{companyDesc:'--',challenge:"We're scaling and need systems before we get f",software:'Another ERP',timeline:'--',budget:'--',employees:'26-100',role:'VP or Director of Operations'} },
+{ name:'George Taylor', source:'Meta ads', pipeline:'FDA', date:'Apr 28', email:'george.taylor@ic-global.us', business:'Icglobal', phone:'(210) 882-9080', details:{companyDesc:'--',challenge:'all of the above',software:'spreadsheets or paper based',timeline:'--',budget:'--',employees:'26-100',role:'owner/ceo'} },
+{ name:'Phillip Harbin', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 30', email:'chefphilharbin@gmail.com', business:'WELLVILLE FARMS', phone:'(352) 613-7577', details:{companyDesc:'Importer',challenge:'Traceability and compliance',software:'Yes, and we are considering upgrades',timeline:'8-12 months',budget:'No',employees:'129'} },
+{ name:'Thomas Weaver', source:'Meta ads', pipeline:'Food Manufacturer', date:'May 01', email:'tom@weavergroup.co', business:'The Weaver Group LLC', phone:'(609) 845-8634', details:{companyDesc:'Co-packer / co-manufacturer',challenge:'Inventory or warehouse control',software:'No, everything is manual',timeline:'ASAP',budget:'No',employees:'6'} }
+],
+'apr-20': [
+{ name:'Luis Ortega', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 22', email:'luisortegaind@gmail.com', business:'In progress', phone:'(347) 288-1518', details:{companyDesc:'Food manufacturing',challenge:'Production bottlenecks or downtime',software:'No, everything is manual',timeline:'No.',budget:'No.',employees:'30'} },
+{ name:'Hrishikesh Trivedii', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 22', email:'cogpro398@gmail.com', business:'Advance Auto Parts', phone:'(732) 642-1722', details:{companyDesc:'Tortilla manufacturing',challenge:'Traceability and compliance',software:'Not sure',timeline:'3 months',budget:'100000',employees:'20'} },
+{ name:'Rajesh Sinha', source:'Meta ads', pipeline:'General', date:'Apr 22', email:'rkstrade2255@gmail.com', business:'Rks Trade', phone:'(630) 988-2255', details:{companyDesc:'Importer',challenge:'Quality consistency and batch control',software:'No, everything is manual',timeline:'3-6 months',budget:'Na',employees:'Rkstrade2255@gmail.com'} },
+{ name:'Luis Rivero', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 23', email:'luisr@lunafoods.net', business:'Masala Bliss', phone:'(225) 252-5358', details:{companyDesc:'Food manufacturing',challenge:'Production bottlenecks or downtime',software:'No, everything is manual',timeline:'No',budget:'No',employees:'2'} },
+{ name:'Pablo Ramirez', source:'LinkedIn', pipeline:'Meeting Booked', date:'Apr 23', email:'paulramirez898@gmail.com', business:'Molinos el Pais', phone:'+595 992 868619' }
+],
+'apr-13': [
+{ name:'Michael Crews', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 13', email:'michaelecrews1@gmail.com', business:'pure root', phone:'(929) 798-3186', details:{companyDesc:'Distributor',challenge:'Cost reduction or labor shortages',software:'Not sure',timeline:'2 months',budget:'100000',employees:'6'} },
+{ name:'Wayne Sellers', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 14', email:'wayne@pasqualefoodsystems.com', business:'PFSI, Inc.', phone:'(205) 266-2647', details:{companyDesc:'Food manufacturing',challenge:'Cost reduction or labor shortages',software:'No, everything is manual',timeline:'no',budget:'no',employees:'40'} },
+{ name:'Sangller', source:'Chat Widget', pipeline:'General', date:'Apr 13', email:'Not Provided', business:'Unknown', phone:'+58 414 3068257' },
+{ name:'Jairo Cárdenas', source:'Meta ads', pipeline:'General', date:'Apr 17', email:'Not Provided', business:'empresa Movilway', phone:'+58 426 5363531' },
+{ name:'John Gozzi', source:'Meta ads', pipeline:'General', date:'Apr 17', email:'tidalvink@gmail.com', business:'Tidal V Ink', phone:'(843) 687-0166' }
+],
+'apr-06': [{ name:'Lucy Baez', source:'Meta ads', pipeline:'looking for job', date:'Apr 07', email:'cedeniab@icloud.com', business:'tortilla Company', phone:'(239) 492-6420' }],
+'mar-30': [
+{ name:'Alexis Fouonji Takuefou', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 03', email:'alexis.fouonji@fotalauto.com', business:'Fotal Auto LLC', phone:'(432) 234-2508', details:{challenge:'Inventory or warehouse control',software:'Yes, and we are considering upgrades',timeline:'3 months',budget:'Not yet',employees:'Tbc'} },
+{ name:'Haji Tunkara', source:'Meta ads', pipeline:'looking for job/fake', date:'Apr 03', email:'hajitunkarah@gmail.com', business:'Works', phone:'(425) 552-0373' },
+{ name:'Shaowen Li', source:'Meta ads', pipeline:'looking for job/fake', date:'Apr 02', email:'doggydoodle94@yahoo.com', business:'Shaowen', phone:'(510) 701-4702' },
+{ name:'Ray Anej', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 02', email:'anejray72@gmail.com', business:'JBS', phone:'(385) 389-0410', details:{website:'https://jbsfoodsgroup.com/',challenge:'Traceability and compliance',software:'Yes, but it needs improvement',timeline:'yes',budget:'yes',employees:'yes I have experience 5 year'} },
+{ name:'Hector Galvan', source:'Meta ads', pipeline:'Tortilla', date:'Apr 02', email:'galvhector@gmail.com', business:'Del Comal Tortilla Factory', phone:'(281) 642-5826', status:'ongoing', details:{foodType:'tortilla',website:'https://www.delcomaltortillas.com/',challenge:'Too many manual processes',software:'Yes, but it needs improvement',timeline:'Asp',budget:'Mejorar',employees:40} },
+{ name:'Antonio Aguilera', source:'Meta ads', pipeline:'General', date:'Apr 02', email:'admin@dreambloxx.com', business:'frogtown foods', phone:'(626) 200-5708', details:{foodType:'food truck',employees:5,budget:'no',timeline:'now',challenge:'Too many manual processes',software:'No, everything is manual'} },
+{ name:'Gregory Lereno', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 02', email:'glereno1@gmail.com', business:'El Greg Inc.', phone:'(847) 274-2504', details:{foodType:'Pies',website:'https://www.elgreg.com/',employees:12,budget:'No',timeline:'No',challenge:'Traceability and compliance',software:'Yes, but it needs improvement'} }
+],
+'mar-23': [
+{ name:'Miguel Zavala', source:'Meta ads', pipeline:'Food Manufacturer', date:'Mar 25', email:'miguel_zavala9@hotmail.com', business:'Ajinomoto Food Service', phone:'+15107064602' },
+{ name:'Cleimer piamo', source:'Instagram', pipeline:'food manufacturer es', date:'Mar 27', email:'Contact via IG', business:'Abastos Los Piamitos', phone:'04248016460' }
+],
+'mar-16': [],
+'mar-09': [
+{ name:'Gisela Rodriguez', source:'Instagram', pipeline:'Food Manufacturer', date:'Mar 10', email:'contabilidad@pencas.com', business:'Mi Ranchito', phone:'+507 6615 1268' },
+{ name:'Marylou Navarro Hanna', source:'Meta ads', pipeline:'Food Manufacturers', date:'Mar 11', email:'marylou@pattyspizza.com', business:'Pattys pizza', phone:'+13108216150' }
+],
+'mar-02': [
+{ name:'Gemma Marin', source:'Tortilla Webinar', pipeline:'Tortilla Manufacturer', date:'Mar 03', email:'gmarin@vedeqsa.com', business:'VEDEQSA', phone:'+34 670 66 55 02' },
+{ name:'Gregorie Exama (job)', source:'Meta ads', pipeline:'General', date:'Mar 04', email:'gregorypoutiano57@gmail.com', business:'Personal', phone:'(904) 652-6841' },
+{ name:'Jhul Khanal (job)', source:'Meta ads', pipeline:'General', date:'Mar 04', email:'khanaldhan3@yahoo.com', business:'Personal', phone:'(913) 291-8113' }
+],
+'feb-23': [
+{ name:'Arquimides Alexander Padrinos Garcia', source:'Website', pipeline:'General', date:'Feb 23', email:'Email Not Provided', business:'CORPOELEC', phone:'+58 424 7228450' },
+{ name:'Barbara Reed', source:'Meta ads', pipeline:'General', date:'Feb 24', email:'barbara1949reed@gmail.com', business:'Personal', phone:'(717) 265-5418' },
+{ name:'Luis Flores', source:'Meta ads', pipeline:'General', date:'Feb 25', email:'luislf3225flores@gmail.com', business:'Personal', phone:'(479) 270-0583' },
+{ name:'Nermin Saman (job)', source:'Meta ads', pipeline:'General', date:'Feb 26', email:'nermunsaman44@icloud.com', business:'Personal', phone:'(615) 540-4007' },
+{ name:"Jordan Simmons", source:'Meta ads', pipeline:'Food Manufacturer', date:'Feb 28', email:'marksimmons513@gmail.com', business:"Fry's Food Store", phone:'(480) 202-6139' }
+]
+};
+const weeklyData = {
+'apr-27': { outreachTotal:161, outreachBreakdown:"Enterpryze: 71 | Food: 21 | ERP: 69", pipelineCount:4, dateRange:"Apr 27 - May 03", chartLabels:['Apr 27','Apr 28','Apr 29','Apr 30','May 01','May 02','May 03'], chartValues:[1,1,0,1,1,0,0], entSent:71, entOpen:"37.5%", entClick:"0%", entReply:"0%", foodSent:21, foodOpen:"58.2%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:69, erpOpen:"31.4%", erpClick:"0%", erpReply:"4.8%" },
+'apr-20': { outreachTotal:155, outreachBreakdown:"Enterpryze: 72 | Food: 18 | ERP: 65", pipelineCount:5, dateRange:"Apr 20 - 26", chartLabels:['Apr 20','Apr 21','Apr 22','Apr 23','Apr 24','Apr 25','Apr 26'], chartValues:[0,0,3,2,0,0,0], entSent:72, entOpen:"36.1%", entClick:"0%", entReply:"0%", foodSent:18, foodOpen:"55.5%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:65, erpOpen:"30.8%", erpClick:"0%", erpReply:"4.6%" },
+'apr-13': { outreachTotal:166, outreachBreakdown:"Enterpryze: 68 | Food: 23 | ERP: 75", pipelineCount:5, dateRange:"Apr 13 - 19", chartLabels:['Apr 13','Apr 14','Apr 15','Apr 16','Apr 17','Apr 18','Apr 19'], chartValues:[2,1,0,0,3,0,0], entSent:68, entOpen:"38.5%", entClick:"0%", entReply:"0%", foodSent:23, foodOpen:"65.22%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:75, erpOpen:"32%", erpClick:"0%", erpReply:"5.33%" },
+'apr-06': { outreachTotal:134, outreachBreakdown:"Enterpryze: 75 | Food: 14 | ERP: 45", pipelineCount:1, dateRange:"Apr 06 - 12", chartLabels:['Apr 06','Apr 07','Apr 08','Apr 09','Apr 10','Apr 11','Apr 12'], chartValues:[0,1,0,0,0,0,0], entSent:75, entOpen:"0%", entClick:"0%", entReply:"0%", foodSent:14, foodOpen:"50%", foodClick:"7.14%", foodReply:"0%", foodLabel:"Email Sent", erpSent:45, erpOpen:"26.67%", erpClick:"0%", erpReply:"0%" },
+'mar-30': { outreachTotal:0, outreachBreakdown:"Enterpryze: 0 | Food: 0 | ERP: 0", pipelineCount:7, dateRange:"Mar 30 - Apr 05", chartLabels:['Mar 30','Mar 31','Apr 01','Apr 02','Apr 03','Apr 04','Apr 05'], chartValues:[0,0,0,5,2,0,0], entSent:0, entOpen:"0%", entClick:"0%", entReply:"0%", foodSent:0, foodOpen:"0%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
+'mar-23': { outreachTotal:0, outreachBreakdown:"Enterpryze: 0 | Food: 0 | ERP: 0", pipelineCount:2, dateRange:"Mar 23 - 29", chartLabels:['Mar 23','Mar 24','Mar 25','Mar 26','Mar 27','Mar 28','Mar 29'], chartValues:[0,0,1,0,1,0,0], entSent:0, entOpen:"0%", entClick:"0%", entReply:"0%", foodSent:0, foodOpen:"0%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
+'mar-16': { outreachTotal:0, outreachBreakdown:"Enterpryze: 0 | Food: 0 | ERP: 0", pipelineCount:0, dateRange:"Mar 16 - 22", chartLabels:['Mar 16','Mar 17','Mar 18','Mar 19','Mar 20','Mar 21','Mar 22'], chartValues:[0,0,0,0,0,0,0], entSent:0, entOpen:"0%", entClick:"0%", entReply:"0%", foodSent:0, foodOpen:"0%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
+'mar-09': { outreachTotal:28, outreachBreakdown:"Enterpryze: 12 | Food: 16 | ERP: 0", pipelineCount:2, dateRange:"Mar 09 - 15", chartLabels:['Mar 09','Mar 10','Mar 11','Mar 12','Mar 13','Mar 14','Mar 15'], chartValues:[0,1,1,0,0,0,0], entSent:12, entOpen:"0%", entClick:"0%", entReply:"0%", foodSent:16, foodOpen:"18.75%", foodClick:"6.25%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
+'mar-02': { outreachTotal:35, outreachBreakdown:"Enterpryze: 0 | Food: 35 | ERP: 0", pipelineCount:3, dateRange:"Mar 02 - 08", chartLabels:['Mar 02','Mar 03','Mar 04','Mar 05','Mar 06','Mar 07','Mar 08'], chartValues:[0,1,2,0,0,0,0], entSent:0, entOpen:"0%", entClick:"0%", entReply:"0%", foodSent:35, foodOpen:"33.33%", foodClick:"9.8%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
+'feb-23': { outreachTotal:0, outreachBreakdown:"Historical data only", pipelineCount:5, dateRange:"Feb 23 - 29", chartLabels:['Feb 23','Feb 24','Feb 25','Feb 26','Feb 27','Feb 28','Feb 29'], chartValues:[1,1,1,1,0,1,0], entSent:0, entOpen:"0%", entClick:"0%", entReply:"0%", foodSent:0, foodOpen:"0%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" }
+};
+function switchTab(tabId) {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + tabId).classList.add('active');
+    document.querySelectorAll('.sidebar-item').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('btn-' + tabId).classList.add('active');
+    if (tabId === 'summary') setTimeout(() => { if(currentViewData) renderSummaryChart(currentViewData); }, 100);
+    if (tabId === 'emails') switchCampaign('enterpryze');
+    if (window.innerWidth < 768) { const nav = document.getElementById('sidebarNav'); if (nav && !nav.classList.contains('hidden')) { nav.classList.add('hidden'); nav.classList.remove('flex'); } }
+}
+function toggleMobileMenu() { const nav = document.getElementById('sidebarNav'); if (nav) { if (nav.classList.contains('hidden')) { nav.classList.remove('hidden'); nav.classList.add('flex'); } else { nav.classList.add('hidden'); nav.classList.remove('flex'); } } }
+function switchCampaign(campaignId) { document.querySelectorAll('.campaign-content').forEach(c => c.classList.remove('active')); document.getElementById('campaign-' + campaignId).classList.add('active'); document.querySelectorAll('.campaign-pill').forEach(p => p.classList.remove('active')); document.getElementById('pill-' + campaignId).classList.add('active'); }
+function toggleModal(show) { if(show) populateLeadsModal(); document.getElementById('leadsModal').style.display = show ? 'flex' : 'none'; }
+function toggleReplyModal(show) { document.getElementById('replyModal').style.display = show ? 'flex' : 'none'; }
+function toggleLeadDetailsModal(show) { document.getElementById('leadDetailsModal').style.display = show ? 'flex' : 'none'; }
+
+function openLeadDetails(leadIndex) {
+    if (!currentViewData || !currentViewData.leads) return;
+    const lead = currentViewData.leads[leadIndex];
+    if (!lead || !lead.details) return;
+    document.getElementById('detailName').innerText = lead.name;
+    document.getElementById('detailBusiness').innerText = lead.business;
+    let extraDetailsHTML = '';
+    if (lead.details.companyDesc) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Company Description</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.companyDesc+'</p></div>'; }
+    if (lead.details.challenge) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Operational Challenge</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.challenge+'</p></div>'; }
+    if (lead.details.software) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Current Software</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.software+'</p></div>'; }
+    if (lead.details.role) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Role</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.role+'</p></div>'; }
+    const container = document.getElementById('leadSpecificDetails');
+    container.innerHTML = '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Type of Food</p><p class="text-xs md:text-sm font-bold text-slate-800">'+(lead.details.foodType||'N/A')+'</p></div><div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Website</p>'+(lead.details.website?'<a href="'+lead.details.website+'" target="_blank" class="text-xs md:text-sm font-bold text-orange-500 hover:underline truncate block">'+lead.details.website+'</a>':'<p class="text-xs md:text-sm font-bold text-slate-800">N/A</p>')+'</div><div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Number of Employees</p><p class="text-xs md:text-sm font-bold text-slate-800">'+(lead.details.employees||'N/A')+'</p></div><div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Budget</p><p class="text-xs md:text-sm font-bold text-slate-800">'+(lead.details.budget||'N/A')+'</p></div><div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Timeline</p><p class="text-xs md:text-sm font-bold text-slate-800">'+(lead.details.timeline||'N/A')+'</p></div>'+extraDetailsHTML;
+    toggleLeadDetailsModal(true);
+}
+
+function populateLeadsModal() {
+    const container = document.getElementById('leadsModalContent');
+    container.innerHTML = '';
+    const leads = currentViewData ? currentViewData.leads : [];
+    if (leads.length === 0) { container.innerHTML = '<p class="text-slate-400 text-center italic py-10">No leads recorded for this range.</p>'; return; }
+    leads.forEach((lead, index) => {
+        const hasDetails = !!lead.details;
+        let cardClasses = "p-4 md:p-5 rounded-[24px] space-y-3 md:space-y-4 shadow-sm transition-all ";
+        if (lead.status === 'ongoing') { cardClasses += "bg-emerald-50/50 border-2 border-emerald-400 "; } else { cardClasses += "bg-white/60 border border-slate-100 "; }
+        if (hasDetails) { cardClasses += "cursor-pointer hover:bg-white shadow-md transform hover:-translate-y-0.5 "; if (lead.status !== 'ongoing') { cardClasses += "hover:border-orange-200 "; } }
+        const clickAttr = hasDetails ? 'onclick="openLeadDetails('+index+')"' : '';
+        const badge = hasDetails ? '<span class="ml-2 text-[8px] font-black text-white bg-orange-500 px-2 py-0.5 rounded shadow-sm whitespace-nowrap">VIEW DETAILS</span>' : '';
+        const statusBadge = lead.status === 'ongoing' ? '<span class="ml-2 text-[8px] md:text-[9px] font-black text-emerald-600 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded uppercase whitespace-nowrap">Ongoing</span>' : '';
+        let modalPipelineClass = "text-orange-600 bg-orange-50";
+        if(lead.pipeline && lead.pipeline.toUpperCase() === 'FDA') { modalPipelineClass = "text-red-600 bg-red-50"; }
+        container.innerHTML += '<div class="'+cardClasses+'" '+clickAttr+'><div class="flex flex-col sm:flex-row justify-between sm:items-center border-b '+(lead.status==='ongoing'?'border-emerald-200':'border-slate-100')+' pb-3 gap-2"><div><div class="flex flex-wrap items-center gap-1 md:gap-2"><h4 class="text-lg md:text-xl font-bold text-slate-800">'+lead.name+'</h4>'+badge+statusBadge+'</div><div class="flex flex-wrap items-center gap-2 mt-2 sm:mt-1"><span class="text-[8px] md:text-[9px] font-black text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded uppercase">'+lead.source+'</span><span class="text-[8px] md:text-[9px] font-black '+modalPipelineClass+' px-2 py-0.5 rounded uppercase">'+lead.pipeline+'</span></div></div><span class="text-[8px] md:text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded self-start sm:self-auto shrink-0">'+lead.date+'</span></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 text-[10px] md:text-[11px] font-semibold text-slate-600 pt-1"><div class="space-y-1 overflow-hidden"><p class="text-slate-400 uppercase text-[8px] md:text-[9px]">Email & Business</p><p class="truncate">'+lead.email+'</p><p class="text-orange-500 truncate">'+lead.business+'</p></div><div class="space-y-1"><p class="text-slate-400 uppercase text-[8px] md:text-[9px]">Phone</p><p>'+lead.phone+'</p></div></div></div>';
+    });
+}
+function getKeysForRange(rangeValue) {
+    if (allWeeksInOrder.includes(rangeValue)) return [rangeValue];
+    const reversed = [...allWeeksInOrder].reverse();
+    if (rangeValue === '1-week') return reversed.slice(0, 1);
+    if (rangeValue === '2-weeks') return reversed.slice(0, 2);
+    if (rangeValue === '1-month') return reversed.slice(0, 4);
+    if (rangeValue === '3-months') return reversed.slice(0, 12);
+    if (rangeValue === '1-year' || rangeValue === 'all-time') return reversed;
+    return [];
+}
+function parsePercent(str) { return parseFloat(str.replace('%', '')) || 0; }
+
+
+
+function getAggregatedData(keys) {
+    let agg = { outreachTotal:0, pipelineCount:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], leads:[], dateRange:'' };
+    let chronKeys = [...keys].reverse();
+    chronKeys.forEach(key => {
+        let data = weeklyData[key]; if (!data) return;
+        agg.outreachTotal += data.outreachTotal;
+        agg.pipelineCount += data.pipelineCount;
+
+        agg.entSent += data.entSent; agg.entOpenRaw += (parsePercent(data.entOpen)/100)*data.entSent; agg.entClickRaw += (parsePercent(data.entClick)/100)*data.entSent; agg.entReplyRaw += (parsePercent(data.entReply)/100)*data.entSent;
+        agg.foodSent += data.foodSent; agg.foodOpenRaw += (parsePercent(data.foodOpen)/100)*data.foodSent; agg.foodClickRaw += (parsePercent(data.foodClick)/100)*data.foodSent; agg.foodReplyRaw += (parsePercent(data.foodReply)/100)*data.foodSent;
+        agg.erpSent += data.erpSent; agg.erpOpenRaw += (parsePercent(data.erpOpen)/100)*data.erpSent; agg.erpClickRaw += (parsePercent(data.erpClick)/100)*data.erpSent; agg.erpReplyRaw += (parsePercent(data.erpReply)/100)*data.erpSent;
+        if (keys.length > 2) { agg.chartLabels.push(data.dateRange.split(' - ')[0]); agg.chartValues.push(data.chartValues.reduce((a,b)=>a+b,0)); } else { agg.chartLabels.push(...data.chartLabels); agg.chartValues.push(...data.chartValues); }
+        if (leadsByWeek[key]) { agg.leads.push(...leadsByWeek[key]); }
+    });
+    if (chronKeys.length > 0) { let s = weeklyData[chronKeys[0]]; let e = weeklyData[chronKeys[chronKeys.length-1]]; agg.dateRange = chronKeys.length===1 ? s.dateRange : s.dateRange.split(' - ')[0]+' - '+(e.dateRange.split(' - ')[1]||e.dateRange); }
+    const fmt = (raw, sent) => sent > 0 ? (raw/sent*100).toFixed(1)+'%' : '0%';
+    agg.entOpen=fmt(agg.entOpenRaw,agg.entSent); agg.entClick=fmt(agg.entClickRaw,agg.entSent); agg.entReply=fmt(agg.entReplyRaw,agg.entSent);
+    agg.foodOpen=fmt(agg.foodOpenRaw,agg.foodSent); agg.foodClick=fmt(agg.foodClickRaw,agg.foodSent); agg.foodReply=fmt(agg.foodReplyRaw,agg.foodSent);
+    agg.erpOpen=fmt(agg.erpOpenRaw,agg.erpSent); agg.erpClick=fmt(agg.erpClickRaw,agg.erpSent); agg.erpReply=fmt(agg.erpReplyRaw,agg.erpSent);
+    agg.outreachBreakdown = 'Enterpryze: '+agg.entSent+' | Food: '+agg.foodSent+' | ERP: '+agg.erpSent;
+    agg.foodLabel = "Email Sent";
+
+    return agg;
+}
+
+function handleWeekChange(rangeValue) {
+    const keys = getKeysForRange(rangeValue); if (keys.length === 0) return;
+    currentViewData = getAggregatedData(keys);
+    const data = currentViewData;
+    document.getElementById('outreachSentCount').innerText = data.outreachTotal+' Sent';
+    document.getElementById('outreachBreakdown').innerText = data.outreachBreakdown;
+    document.getElementById('pipelineLeadCount').innerText = data.pipelineCount+' Lead'+(data.pipelineCount!==1?'s':'');
+    document.getElementById('chartDateContext').innerText = 'Tracking arrival dates for '+data.dateRange;
+    document.getElementById('modalWeekLabel').innerText = 'Active Range: '+data.dateRange;
+    document.getElementById('entSentCount').innerText = data.entSent;
+    document.getElementById('entOpenRate').innerText = data.entOpen;
+    document.getElementById('entClickRate').innerText = data.entClick;
+    document.getElementById('entReplyRate').innerText = data.entReply;
+    document.getElementById('foodLabel').innerText = data.foodLabel;
+    document.getElementById('foodSentCount').innerText = data.foodSent;
+    document.getElementById('foodOpenRate').innerText = data.foodOpen;
+    document.getElementById('foodClickRate').innerText = data.foodClick;
+    document.getElementById('foodReplyRate').innerText = data.foodReply;
+    document.getElementById('erpSentCount').innerText = data.erpSent;
+    document.getElementById('erpOpenRate').innerText = data.erpOpen;
+    document.getElementById('erpClickRate').innerText = data.erpClick;
+    document.getElementById('erpReplyRate').innerText = data.erpReply;
+
+    if(document.getElementById('tab-summary').classList.contains('active')) { renderSummaryChart(data); }
+    if(document.getElementById('leadsModal').style.display === 'flex') { populateLeadsModal(); }
+}
+
+function renderSummaryChart(data) {
+    if (summaryChart) summaryChart.destroy();
+    const ctx = document.getElementById('leadsSummaryChart').getContext('2d');
+    summaryChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: data.chartLabels, datasets: [{ data: data.chartValues, backgroundColor: '#f97316', borderRadius: 8, barThickness: 16 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
+    });
+}
+window.onload = () => handleWeekChange('all-time');
+</script>
+</body>
+</html>
