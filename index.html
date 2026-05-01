@@ -72,10 +72,10 @@ LinkedIn Outreach
 <option value="3-months">Past 3 Months</option>
 <option value="1-month">Past 1 Month</option>
 <option value="2-weeks">Past 2 Weeks</option>
-<option value="1-week" selected>Past 1 Week</option>
+<option value="1-week">Past 1 Week</option>
 </optgroup>
 <optgroup label="Specific Weeks">
-<option value="apr-27">Apr 27 - May 03</option>
+<option value="apr-27" selected>Apr 27 - May 03</option>
 <option value="apr-20">Apr 20 - 26</option>
 <option value="apr-13">April 13 - 19</option>
 <option value="apr-06">April 06 - 12</option>
@@ -448,7 +448,7 @@ function renderSummaryChart(data) {
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
     });
 }
-window.onload = () => handleWeekChange('all-time');
+window.onload = () => handleWeekChange('apr-27');
 </script>
 </body>
 </html>
