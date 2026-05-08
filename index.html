@@ -75,7 +75,8 @@ LinkedIn Outreach
 <option value="1-week">Past 1 Week</option>
 </optgroup>
 <optgroup label="Specific Weeks">
-<option value="apr-27" selected>Apr 27 - May 03</option>
+<option value="may-04" selected>May 04 - 10</option>
+<option value="apr-27">Apr 27 - May 03</option>
 <option value="apr-20">Apr 20 - 26</option>
 <option value="apr-13">April 13 - 19</option>
 <option value="apr-06">April 06 - 12</option>
@@ -257,14 +258,19 @@ ACTIVE PIPELINE
 <script>
 let summaryChart = null;
 let currentViewData = null;
-const allWeeksInOrder = ['feb-23','mar-02','mar-09','mar-16','mar-23','mar-30','apr-06','apr-13','apr-20','apr-27'];
+const allWeeksInOrder = ['feb-23','mar-02','mar-09','mar-16','mar-23','mar-30','apr-06','apr-13','apr-20','apr-27','may-04'];
 
 const leadsByWeek = {
+'may-04': [
+        { name:'Arturo Perezl', source:'Meta ads', pipeline:'FDA', date:'May 5', email:'perezartsr8@gmail.com', business:'perezartsr8@gmail.com', phone:'(361) 300-6710' },
+        { name:'Jorge Cepeda', source:'Meta ads', pipeline:'Food Manufacturer', date:'May 7', email:'jcepeda@grow7usa.com', business:'Grow7 Corp', phone:'(786) 210-1290' }
+],
 'apr-27': [
 { name:'Said Hussein', source:'Meta ads', pipeline:'FDA', date:'Apr 27', email:'isseh@cosmopolitanacare.com', business:'Cosmopolitan & Associates Inc', phone:'(612) 459-9667', details:{companyDesc:'--',challenge:"We're scaling and need systems before we get f",software:'Another ERP',timeline:'--',budget:'--',employees:'26-100',role:'VP or Director of Operations'} },
 { name:'George Taylor', source:'Meta ads', pipeline:'FDA', date:'Apr 28', email:'george.taylor@ic-global.us', business:'Icglobal', phone:'(210) 882-9080', details:{companyDesc:'--',challenge:'all of the above',software:'spreadsheets or paper based',timeline:'--',budget:'--',employees:'26-100',role:'owner/ceo'} },
 { name:'Phillip Harbin', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 30', email:'chefphilharbin@gmail.com', business:'WELLVILLE FARMS', phone:'(352) 613-7577', details:{companyDesc:'Importer',challenge:'Traceability and compliance',software:'Yes, and we are considering upgrades',timeline:'8-12 months',budget:'No',employees:'129'} },
-{ name:'Thomas Weaver', source:'Meta ads', pipeline:'Food Manufacturer', date:'May 01', email:'tom@weavergroup.co', business:'The Weaver Group LLC', phone:'(609) 845-8634', details:{companyDesc:'Co-packer / co-manufacturer',challenge:'Inventory or warehouse control',software:'No, everything is manual',timeline:'ASAP',budget:'No',employees:'6'} }
+{ name:'Thomas Weaver', source:'Meta ads', pipeline:'Food Manufacturer', date:'May 01', email:'tom@weavergroup.co', business:'The Weaver Group LLC', phone:'(609) 845-8634', details:{companyDesc:'Co-packer / co-manufacturer',challenge:'Inventory or warehouse control',software:'No, everything is manual',timeline:'ASAP',budget:'No',employees:'6'} },
+{ name:'Moe Elkasri', source:'Meta ads', pipeline:'Food Manufacturer', date:'May 2', email:'moe@globalfoodmfg.com', business:'Global Food Services', phone:'(813) 760-6805' }
 ],
 'apr-20': [
 { name:'Luis Ortega', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 22', email:'luisortegaind@gmail.com', business:'In progress', phone:'(347) 288-1518', details:{companyDesc:'Food manufacturing',challenge:'Production bottlenecks or downtime',software:'No, everything is manual',timeline:'No.',budget:'No.',employees:'30'} },
@@ -313,7 +319,8 @@ const leadsByWeek = {
 ]
 };
 const weeklyData = {
-'apr-27': { outreachTotal:161, outreachBreakdown:"Enterpryze: 71 | Food: 21 | ERP: 69", pipelineCount:4, dateRange:"Apr 27 - May 03", chartLabels:['Apr 27','Apr 28','Apr 29','Apr 30','May 01','May 02','May 03'], chartValues:[1,1,0,1,1,0,0], entSent:71, entOpen:"37.5%", entClick:"0%", entReply:"0%", foodSent:21, foodOpen:"58.2%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:69, erpOpen:"31.4%", erpClick:"0%", erpReply:"4.8%" },
+'may-04': { outreachTotal:0, outreachBreakdown:"Enterpryze: 0 | Food: 0 | ERP: 0", pipelineCount:2, dateRange:"May 04 - 10", chartLabels:['May 04','May 05','May 06','May 07','May 08','May 09','May 10'], chartValues:[0,1,0,1,0,0,0], entSent:0, entOpen:"0%", entClick:"0%", entReply:"0%", foodSent:0, foodOpen:"0%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
+'apr-27': { outreachTotal:161, outreachBreakdown:"Enterpryze: 71 | Food: 21 | ERP: 69", pipelineCount:5, dateRange:"Apr 27 - May 03", chartLabels:['Apr 27','Apr 28','Apr 29','Apr 30','May 01','May 02','May 03'], chartValues:[1,1,0,1,1,1,0], entSent:71, entOpen:"37.5%", entClick:"0%", entReply:"0%", foodSent:21, foodOpen:"58.2%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:69, erpOpen:"31.4%", erpClick:"0%", erpReply:"4.8%" },
 'apr-20': { outreachTotal:155, outreachBreakdown:"Enterpryze: 72 | Food: 18 | ERP: 65", pipelineCount:5, dateRange:"Apr 20 - 26", chartLabels:['Apr 20','Apr 21','Apr 22','Apr 23','Apr 24','Apr 25','Apr 26'], chartValues:[0,0,3,2,0,0,0], entSent:72, entOpen:"36.1%", entClick:"0%", entReply:"0%", foodSent:18, foodOpen:"55.5%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:65, erpOpen:"30.8%", erpClick:"0%", erpReply:"4.6%" },
 'apr-13': { outreachTotal:166, outreachBreakdown:"Enterpryze: 68 | Food: 23 | ERP: 75", pipelineCount:5, dateRange:"Apr 13 - 19", chartLabels:['Apr 13','Apr 14','Apr 15','Apr 16','Apr 17','Apr 18','Apr 19'], chartValues:[2,1,0,0,3,0,0], entSent:68, entOpen:"38.5%", entClick:"0%", entReply:"0%", foodSent:23, foodOpen:"65.22%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:75, erpOpen:"32%", erpClick:"0%", erpReply:"5.33%" },
 'apr-06': { outreachTotal:134, outreachBreakdown:"Enterpryze: 75 | Food: 14 | ERP: 45", pipelineCount:1, dateRange:"Apr 06 - 12", chartLabels:['Apr 06','Apr 07','Apr 08','Apr 09','Apr 10','Apr 11','Apr 12'], chartValues:[0,1,0,0,0,0,0], entSent:75, entOpen:"0%", entClick:"0%", entReply:"0%", foodSent:14, foodOpen:"50%", foodClick:"7.14%", foodReply:"0%", foodLabel:"Email Sent", erpSent:45, erpOpen:"26.67%", erpClick:"0%", erpReply:"0%" },
@@ -448,7 +455,7 @@ function renderSummaryChart(data) {
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
     });
 }
-window.onload = () => handleWeekChange('apr-27');
+window.onload = () => handleWeekChange('may-04');
 </script>
 </body>
 </html>
