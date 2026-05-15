@@ -222,6 +222,7 @@ ACTIVE PIPELINE
 <div class="bg-white/90 backdrop-blur-2xl border border-white rounded-[32px] p-5 md:p-8 w-full max-w-[700px] shadow-2xl relative max-h-[90vh] overflow-y-auto scroll-container">
 <button onclick="toggleModal(false)" class="absolute top-4 right-4 md:top-6 md:right-6 text-slate-400 hover:text-slate-600 transition-colors p-2 bg-slate-100/50 rounded-full"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
 <header class="mb-4 md:mb-6 pr-8"><h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">Lead Analysis</h3><p class="text-[10px] md:text-[11px] font-bold text-orange-500 uppercase tracking-widest mt-1" id="modalWeekLabel">Active Week: March 30 - Apr 05</p></header>
+<div id="leadFilterBar" class="flex items-center gap-2 mb-4 flex-wrap"></div>
 <div id="leadsModalContent" class="space-y-4"></div>
 </div>
 </div>
@@ -355,7 +356,9 @@ function switchTab(tabId) {
 }
 function toggleMobileMenu() { const nav = document.getElementById('sidebarNav'); if (nav) { if (nav.classList.contains('hidden')) { nav.classList.remove('hidden'); nav.classList.add('flex'); } else { nav.classList.add('hidden'); nav.classList.remove('flex'); } } }
 function switchCampaign(campaignId) { document.querySelectorAll('.campaign-content').forEach(c => c.classList.remove('active')); document.getElementById('campaign-' + campaignId).classList.add('active'); document.querySelectorAll('.campaign-pill').forEach(p => p.classList.remove('active')); document.getElementById('pill-' + campaignId).classList.add('active'); }
-function toggleModal(show) { if(show) populateLeadsModal(); document.getElementById('leadsModal').style.display = show ? 'flex' : 'none'; }
+let currentLeadFilter = 'all';
+function toggleModal(show) { if(show) { currentLeadFilter = 'all'; populateLeadsModal(); } document.getElementById('leadsModal').style.display = show ? 'flex' : 'none'; }
+function setLeadFilter(filter) { currentLeadFilter = filter; populateLeadsModal(); }
 function toggleReplyModal(show) { document.getElementById('replyModal').style.display = show ? 'flex' : 'none'; }
 function toggleLeadDetailsModal(show) { document.getElementById('leadDetailsModal').style.display = show ? 'flex' : 'none'; }
 
@@ -377,15 +380,36 @@ function openLeadDetails(leadIndex) {
 
 function populateLeadsModal() {
     const container = document.getElementById('leadsModalContent');
+    const filterBar = document.getElementById('leadFilterBar');
     container.innerHTML = '';
-    const leads = currentViewData ? currentViewData.leads : [];
-    if (leads.length === 0) { container.innerHTML = '<p class="text-slate-400 text-center italic py-10">No leads recorded for this range.</p>'; return; }
-    leads.forEach((lead, index) => {
+    const allLeads = currentViewData ? currentViewData.leads : [];
+    const allCount = allLeads.length;
+    const fdaCount = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FDA').length;
+    const foodCount = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FOOD MANUFACTURER').length;
+    const generalCount = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() !== 'FDA' && l.pipeline.toUpperCase() !== 'FOOD MANUFACTURER').length;
+    // Build filter pills
+    const pillBase = 'px-3 py-1.5 rounded-full text-[10px] md:text-[11px] font-black uppercase tracking-wider cursor-pointer transition-all border ';
+    const pillActive = 'bg-slate-800 text-white border-slate-800 shadow-md ';
+    const pillInactive = 'bg-white/60 text-slate-500 border-slate-200 hover:bg-slate-100 ';
+    let filterHTML = '';
+    filterHTML += '<button onclick="setLeadFilter(\'all\')" class="'+pillBase+(currentLeadFilter==='all'?pillActive:pillInactive)+'">All <span class="ml-1 opacity-70">'+allCount+'</span></button>';
+    if(fdaCount > 0) filterHTML += '<button onclick="setLeadFilter(\'fda\')" class="'+pillBase+(currentLeadFilter==='fda'?'bg-red-500 text-white border-red-500 shadow-md ':pillInactive)+'">FDA <span class="ml-1 opacity-70">'+fdaCount+'</span></button>';
+    if(foodCount > 0) filterHTML += '<button onclick="setLeadFilter(\'food\')" class="'+pillBase+(currentLeadFilter==='food'?'bg-orange-500 text-white border-orange-500 shadow-md ':pillInactive)+'">Food Man <span class="ml-1 opacity-70">'+foodCount+'</span></button>';
+    if(generalCount > 0) filterHTML += '<button onclick="setLeadFilter(\'general\')" class="'+pillBase+(currentLeadFilter==='general'?'bg-blue-500 text-white border-blue-500 shadow-md ':pillInactive)+'">General <span class="ml-1 opacity-70">'+generalCount+'</span></button>';
+    filterBar.innerHTML = filterHTML;
+    // Filter leads
+    let leads = allLeads;
+    if(currentLeadFilter === 'fda') leads = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FDA');
+    else if(currentLeadFilter === 'food') leads = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FOOD MANUFACTURER');
+    else if(currentLeadFilter === 'general') leads = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() !== 'FDA' && l.pipeline.toUpperCase() !== 'FOOD MANUFACTURER');
+    if (leads.length === 0) { container.innerHTML = '<p class="text-slate-400 text-center italic py-10">No leads for this filter.</p>'; return; }
+    leads.forEach((lead) => {
+        const origIndex = allLeads.indexOf(lead);
         const hasDetails = !!lead.details;
         let cardClasses = "p-4 md:p-5 rounded-[24px] space-y-3 md:space-y-4 shadow-sm transition-all ";
         if (lead.status === 'ongoing') { cardClasses += "bg-emerald-50/50 border-2 border-emerald-400 "; } else { cardClasses += "bg-white/60 border border-slate-100 "; }
         if (hasDetails) { cardClasses += "cursor-pointer hover:bg-white shadow-md transform hover:-translate-y-0.5 "; if (lead.status !== 'ongoing') { cardClasses += "hover:border-orange-200 "; } }
-        const clickAttr = hasDetails ? 'onclick="openLeadDetails('+index+')"' : '';
+        const clickAttr = hasDetails ? 'onclick="openLeadDetails('+origIndex+')"' : '';
         const badge = hasDetails ? '<span class="ml-2 text-[8px] font-black text-white bg-orange-500 px-2 py-0.5 rounded shadow-sm whitespace-nowrap">VIEW DETAILS</span>' : '';
         const statusBadge = lead.status === 'ongoing' ? '<span class="ml-2 text-[8px] md:text-[9px] font-black text-emerald-600 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded uppercase whitespace-nowrap">Ongoing</span>' : '';
         let modalPipelineClass = "text-orange-600 bg-orange-50";
