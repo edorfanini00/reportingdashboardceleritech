@@ -432,7 +432,7 @@ function parsePercent(str) { return parseFloat(str.replace('%', '')) || 0; }
 
 
 function getAggregatedData(keys) {
-    let agg = { outreachTotal:0, pipelineCount:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], leads:[], dateRange:'' };
+    let agg = { outreachTotal:0, pipelineCount:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], chartFdaValues:[], chartFoodValues:[], leads:[], dateRange:'' };
     let chronKeys = [...keys].reverse();
     chronKeys.forEach(key => {
         let data = weeklyData[key]; if (!data) return;
@@ -442,7 +442,32 @@ function getAggregatedData(keys) {
         agg.entSent += data.entSent; agg.entOpenRaw += (parsePercent(data.entOpen)/100)*data.entSent; agg.entClickRaw += (parsePercent(data.entClick)/100)*data.entSent; agg.entReplyRaw += (parsePercent(data.entReply)/100)*data.entSent;
         agg.foodSent += data.foodSent; agg.foodOpenRaw += (parsePercent(data.foodOpen)/100)*data.foodSent; agg.foodClickRaw += (parsePercent(data.foodClick)/100)*data.foodSent; agg.foodReplyRaw += (parsePercent(data.foodReply)/100)*data.foodSent;
         agg.erpSent += data.erpSent; agg.erpOpenRaw += (parsePercent(data.erpOpen)/100)*data.erpSent; agg.erpClickRaw += (parsePercent(data.erpClick)/100)*data.erpSent; agg.erpReplyRaw += (parsePercent(data.erpReply)/100)*data.erpSent;
-        if (keys.length > 2) { agg.chartLabels.push(data.dateRange.split(' - ')[0]); agg.chartValues.push(data.chartValues.reduce((a,b)=>a+b,0)); } else { agg.chartLabels.push(...data.chartLabels); agg.chartValues.push(...data.chartValues); }
+        // Build per-day FDA/Food counts from leads
+        const weekLeads = leadsByWeek[key] || [];
+        if (keys.length > 2) {
+            agg.chartLabels.push(data.dateRange.split(' - ')[0]);
+            const fdaTotal = weekLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FDA').length;
+            const foodTotal = weekLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() !== 'FDA').length;
+            agg.chartFdaValues.push(fdaTotal);
+            agg.chartFoodValues.push(foodTotal);
+            agg.chartValues.push(data.chartValues.reduce((a,b)=>a+b,0));
+        } else {
+            agg.chartLabels.push(...data.chartLabels);
+            agg.chartValues.push(...data.chartValues);
+            // Count leads per day by pipeline
+            data.chartLabels.forEach(label => {
+                let fdaDay = 0, foodDay = 0;
+                weekLeads.forEach(l => {
+                    const leadLabel = l.date.replace(/^(\w{3})\s+(\d{1,2})$/, (m, mon, day) => mon + ' ' + day.padStart(2, '0'));
+                    if (leadLabel === label) {
+                        if (l.pipeline && l.pipeline.toUpperCase() === 'FDA') fdaDay++;
+                        else foodDay++;
+                    }
+                });
+                agg.chartFdaValues.push(fdaDay);
+                agg.chartFoodValues.push(foodDay);
+            });
+        }
         if (leadsByWeek[key]) { agg.leads.push(...leadsByWeek[key]); }
     });
     if (chronKeys.length > 0) { let s = weeklyData[chronKeys[0]]; let e = weeklyData[chronKeys[chronKeys.length-1]]; agg.dateRange = chronKeys.length===1 ? s.dateRange : s.dateRange.split(' - ')[0]+' - '+(e.dateRange.split(' - ')[1]||e.dateRange); }
@@ -486,10 +511,19 @@ function handleWeekChange(rangeValue) {
 function renderSummaryChart(data) {
     if (summaryChart) summaryChart.destroy();
     const ctx = document.getElementById('leadsSummaryChart').getContext('2d');
+    const hasFda = data.chartFdaValues && data.chartFdaValues.some(v => v > 0);
+    const hasFood = data.chartFoodValues && data.chartFoodValues.some(v => v > 0);
+    let datasets = [];
+    if (hasFda || hasFood) {
+        datasets.push({ label: 'Food Man', data: data.chartFoodValues, backgroundColor: '#f97316', borderRadius: 8, barThickness: 16 });
+        datasets.push({ label: 'FDA', data: data.chartFdaValues, backgroundColor: '#ef4444', borderRadius: 8, barThickness: 16 });
+    } else {
+        datasets.push({ label: 'Leads', data: data.chartValues, backgroundColor: '#f97316', borderRadius: 8, barThickness: 16 });
+    }
     summaryChart = new Chart(ctx, {
         type: 'bar',
-        data: { labels: data.chartLabels, datasets: [{ data: data.chartValues, backgroundColor: '#f97316', borderRadius: 8, barThickness: 16 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
+        data: { labels: data.chartLabels, datasets: datasets },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: hasFda || hasFood, position: 'top', labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 12, font: { size: 10, weight: 'bold' }, color: '#64748b' } }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.dataset.label+': '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { stacked: true, grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
     });
 }
 window.onload = () => handleWeekChange('may-11');
