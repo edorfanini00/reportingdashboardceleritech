@@ -153,12 +153,12 @@ ACTIVE PIPELINE
 <p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Total Leads</p>
 <p class="text-2xl md:text-3xl font-black text-slate-800" id="funnelTotalLeads">0</p>
 </div>
-<div class="text-center bg-orange-50/60 rounded-2xl p-3 md:p-4 border border-orange-100/50">
+<div onclick="showFunnelLeads('booked')" class="text-center bg-orange-50/60 rounded-2xl p-3 md:p-4 border border-orange-100/50 cursor-pointer hover:bg-orange-50 hover:shadow-md transition-all">
 <p class="text-[8px] md:text-[9px] font-bold text-orange-400 uppercase tracking-widest mb-2">Meetings Booked</p>
 <p class="text-2xl md:text-3xl font-black text-orange-500" id="funnelBooked">0</p>
 <p class="text-[10px] md:text-[11px] text-orange-400 font-bold mt-1" id="funnelBookedPct">0% of leads</p>
 </div>
-<div class="text-center bg-emerald-50/60 rounded-2xl p-3 md:p-4 border border-emerald-100/50">
+<div onclick="showFunnelLeads('attended')" class="text-center bg-emerald-50/60 rounded-2xl p-3 md:p-4 border border-emerald-100/50 cursor-pointer hover:bg-emerald-50 hover:shadow-md transition-all">
 <p class="text-[8px] md:text-[9px] font-bold text-emerald-400 uppercase tracking-widest mb-2">Attended</p>
 <p class="text-2xl md:text-3xl font-black text-emerald-500" id="funnelAttended">0</p>
 <p class="text-[10px] md:text-[11px] text-emerald-400 font-bold mt-1" id="funnelAttendedPct">0% of booked</p>
@@ -302,7 +302,32 @@ ACTIVE PIPELINE
 <div id="leadSpecificDetails" class="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4"></div>
 </div>
 </div>
+<div id="funnelModal" class="modal-backdrop" onclick="if(event.target == this) toggleFunnelModal(false)">
+<div class="bg-white/90 backdrop-blur-2xl border border-white rounded-[32px] p-5 md:p-8 w-full max-w-[600px] shadow-2xl relative max-h-[90vh] overflow-y-auto scroll-container">
+<button onclick="toggleFunnelModal(false)" class="absolute top-4 right-4 md:top-6 md:right-6 text-slate-400 hover:text-slate-600 transition-colors p-2 bg-slate-100/50 rounded-full"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+<header class="mb-4 md:mb-6 pr-8"><h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight" id="funnelModalTitle">Meetings Booked</h3><p class="text-[10px] md:text-[11px] font-bold text-orange-500 uppercase tracking-widest mt-1" id="funnelModalSubtitle">All Time</p></header>
+<div id="funnelModalContent" class="space-y-3"></div>
+</div>
+</div>
 <script>
+function toggleFunnelModal(show) { document.getElementById('funnelModal').style.display = show ? 'flex' : 'none'; }
+function showFunnelLeads(type) {
+    const allLeads = [];
+    Object.values(leadsByWeek).forEach(weekLeads => { weekLeads.forEach(l => { if(type === 'booked' && l.meetingBooked) allLeads.push(l); if(type === 'attended' && l.meetingAttended) allLeads.push(l); }); });
+    const title = type === 'booked' ? 'Meetings Booked' : 'Meetings Attended';
+    const accentColor = type === 'booked' ? 'orange' : 'emerald';
+    document.getElementById('funnelModalTitle').innerText = title;
+    document.getElementById('funnelModalSubtitle').innerText = allLeads.length + ' lead' + (allLeads.length !== 1 ? 's' : '') + ' — All Time';
+    document.getElementById('funnelModalSubtitle').className = 'text-[10px] md:text-[11px] font-bold text-'+accentColor+'-500 uppercase tracking-widest mt-1';
+    const container = document.getElementById('funnelModalContent');
+    container.innerHTML = '';
+    allLeads.forEach(lead => {
+        const attendedBadge = lead.meetingAttended ? '<span class="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded uppercase">Attended</span>' : '<span class="text-[8px] font-black text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded uppercase">Booked</span>';
+        container.innerHTML += '<div class="bg-white/60 border border-slate-100 p-4 rounded-[20px] shadow-sm"><div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-2"><div><h4 class="text-base md:text-lg font-bold text-slate-800">'+lead.name+'</h4><p class="text-[9px] font-black text-orange-500 uppercase mt-0.5">'+lead.business+'</p></div>'+attendedBadge+'</div><div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] md:text-[11px] font-semibold text-slate-600"><div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Email</p><p class="truncate">'+lead.email+'</p></div><div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Phone</p><p>'+lead.phone+'</p></div></div></div>';
+    });
+    toggleFunnelModal(true);
+}
+
 let summaryChart = null;
 let currentViewData = null;
 const allWeeksInOrder = ['feb-23','mar-02','mar-09','mar-16','mar-23','mar-30','apr-06','apr-13','apr-20','apr-27','may-04','may-11'];
