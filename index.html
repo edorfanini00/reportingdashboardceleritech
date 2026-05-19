@@ -137,6 +137,51 @@ ACTIVE PIPELINE
 </div>
 
 </div>
+<!-- Lead Conversion Funnel -->
+<div class="glass-card p-5 md:p-6">
+<div class="flex justify-between items-start mb-5">
+<div>
+<p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Lead Conversion Funnel</p>
+<h3 class="text-lg md:text-xl font-black text-slate-800 tracking-tight">Pipeline Performance</h3>
+</div>
+<div class="w-8 h-8 md:w-9 md:h-9 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-500 shrink-0">
+<svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+</div>
+</div>
+<div class="grid grid-cols-3 gap-3 md:gap-4 mb-5">
+<div class="text-center bg-slate-50/80 rounded-2xl p-3 md:p-4 border border-slate-100/50">
+<p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Total Leads</p>
+<p class="text-2xl md:text-3xl font-black text-slate-800" id="funnelTotalLeads">0</p>
+</div>
+<div class="text-center bg-orange-50/60 rounded-2xl p-3 md:p-4 border border-orange-100/50">
+<p class="text-[8px] md:text-[9px] font-bold text-orange-400 uppercase tracking-widest mb-2">Meetings Booked</p>
+<p class="text-2xl md:text-3xl font-black text-orange-500" id="funnelBooked">0</p>
+<p class="text-[10px] md:text-[11px] text-orange-400 font-bold mt-1" id="funnelBookedPct">0% of leads</p>
+</div>
+<div class="text-center bg-emerald-50/60 rounded-2xl p-3 md:p-4 border border-emerald-100/50">
+<p class="text-[8px] md:text-[9px] font-bold text-emerald-400 uppercase tracking-widest mb-2">Attended</p>
+<p class="text-2xl md:text-3xl font-black text-emerald-500" id="funnelAttended">0</p>
+<p class="text-[10px] md:text-[11px] text-emerald-400 font-bold mt-1" id="funnelAttendedPct">0% of booked</p>
+</div>
+</div>
+<div class="space-y-2">
+<div class="flex items-center gap-3">
+<span class="text-[9px] font-bold text-slate-400 uppercase w-14 shrink-0">Leads</span>
+<div class="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-slate-700 rounded-full transition-all duration-700" style="width:100%"></div></div>
+<span class="text-[9px] font-bold text-slate-500 w-8 text-right" id="funnelLeadsNum">0</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-[9px] font-bold text-orange-400 uppercase w-14 shrink-0">Booked</span>
+<div class="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-orange-500 rounded-full transition-all duration-700" id="funnelBookedBar" style="width:0%"></div></div>
+<span class="text-[9px] font-bold text-slate-500 w-8 text-right" id="funnelBookedNum">0</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-[9px] font-bold text-emerald-400 uppercase w-14 shrink-0">Attended</span>
+<div class="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-emerald-500 rounded-full transition-all duration-700" id="funnelAttendedBar" style="width:0%"></div></div>
+<span class="text-[9px] font-bold text-slate-500 w-8 text-right" id="funnelAttendedNum">0</span>
+</div>
+</div>
+</div>
 <!-- Lead Intake Schedule Chart -->
 <div class="glass-card p-4 md:p-6">
 <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 md:mb-6 gap-2">
@@ -264,6 +309,7 @@ const allWeeksInOrder = ['feb-23','mar-02','mar-09','mar-16','mar-23','mar-30','
 
 const leadsByWeek = {
 'may-11': [
+        { name:'Fuentes', source:'Chat Widget', pipeline:'General', date:'May 18', email:'fuentesm56@gmail.com', business:'Unknown', phone:'--', meetingBooked:true },
         { name:'Mai Vue', source:'Meta ads', pipeline:'FDA', date:'May 17', email:'maiongvue02411@gmail.com', business:'LLC', phone:'(651) 283-1301', details:{companyDesc:'Other',challenge:'All of the above',software:'QuickBooks',timeline:'Within 30-90 days',budget:'--',employees:'1-25',role:'IT / Systems'} },
         { name:'Cynthia Grubbs', source:'Meta ads', pipeline:'Meta Lead', date:'May 17', email:'cynthia@cgrubbs.com', business:'Motif & Medium', phone:'(248) 348-0232', details:{companyDesc:'Food manufacturing',challenge:'Quality consistency and batch control',software:'No, everything is manual',timeline:'Within one year',budget:'No',employees:'5'} },
         { name:'Bill Lupnois', source:'Meta ads', pipeline:'Food Manufacturer', date:'May 14', email:'bill@richmond-raceway.net', business:'Richmond Raceway KY', phone:'(859) 200-1215', details:{companyDesc:'Not in the food industry',challenge:'Too many manual processes',software:'Not sure',timeline:'Flexible',budget:'Over $100,000',employees:'4'} },
@@ -278,11 +324,11 @@ const leadsByWeek = {
 'may-04': [
         { name:'Arturo Perezl', source:'Meta ads', pipeline:'FDA', date:'May 5', email:'perezartsr8@gmail.com', business:'perezartsr8@gmail.com', phone:'(361) 300-6710', details:{companyDesc:'Food or Beverage Manufacturer',challenge:"We're worried about an upcoming inspection",software:'QuickBooks',timeline:'No hard deadline, but we need to fix it',budget:'--',employees:'26-100',role:'VP or Director of Operations'} },
         { name:'Jorge Cepeda', source:'Meta ads', pipeline:'Food Manufacturer', date:'May 7', email:'jcepeda@grow7usa.com', business:'Grow7 Corp', phone:'(786) 210-1290', details:{companyDesc:'Co-packer / co-manufacturer',challenge:'Production bottlenecks or downtime',software:'No, everything is manual',timeline:'1 year',budget:'No',employees:'14'} },
-        { name:'Clay Bostic', source:'Meta ads', pipeline:'Food Manufacturer', date:'May 10', email:'clay.bostic@bluegrasspack.com', business:'Bluegrass Packaging Industries', phone:'(502) 711-0757', details:{companyDesc:'Food manufacturing',challenge:'Inventory or warehouse control',software:'No, everything is manual',timeline:'6 months',budget:'No',employees:'35'} }
+        { name:'Clay Bostic', source:'Meta ads', pipeline:'Food Manufacturer', date:'May 10', email:'clay.bostic@bluegrasspack.com', business:'Bluegrass Packaging Industries', phone:'(502) 711-0757', meetingBooked:true, details:{companyDesc:'Food manufacturing',challenge:'Inventory or warehouse control',software:'No, everything is manual',timeline:'6 months',budget:'No',employees:'35'} }
 ],
 'apr-27': [
 { name:'Said Hussein', source:'Meta ads', pipeline:'FDA', date:'Apr 27', email:'isseh@cosmopolitanacare.com', business:'Cosmopolitan & Associates Inc', phone:'(612) 459-9667', details:{companyDesc:'--',challenge:"We're scaling and need systems before we get f",software:'Another ERP',timeline:'--',budget:'--',employees:'26-100',role:'VP or Director of Operations'} },
-{ name:'George Taylor', source:'Meta ads', pipeline:'FDA', date:'Apr 28', email:'george.taylor@ic-global.us', business:'Icglobal', phone:'(210) 882-9080', details:{companyDesc:'--',challenge:'all of the above',software:'spreadsheets or paper based',timeline:'--',budget:'--',employees:'26-100',role:'owner/ceo'} },
+{ name:'George Taylor', source:'Meta ads', pipeline:'FDA', date:'Apr 28', email:'george.taylor@ic-global.us', business:'Icglobal', phone:'(210) 882-9080', meetingBooked:true, meetingAttended:true, details:{companyDesc:'--',challenge:'all of the above',software:'spreadsheets or paper based',timeline:'--',budget:'--',employees:'26-100',role:'owner/ceo'} },
 { name:'Phillip Harbin', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 30', email:'chefphilharbin@gmail.com', business:'WELLVILLE FARMS', phone:'(352) 613-7577', details:{companyDesc:'Importer',challenge:'Traceability and compliance',software:'Yes, and we are considering upgrades',timeline:'8-12 months',budget:'No',employees:'129'} },
 { name:'Thomas Weaver', source:'Meta ads', pipeline:'Food Manufacturer', date:'May 01', email:'tom@weavergroup.co', business:'The Weaver Group LLC', phone:'(609) 845-8634', details:{companyDesc:'Co-packer / co-manufacturer',challenge:'Inventory or warehouse control',software:'No, everything is manual',timeline:'ASAP',budget:'No',employees:'6'} },
 { name:'Moe Elkasri', source:'Meta ads', pipeline:'Food Manufacturer', date:'May 2', email:'moe@globalfoodmfg.com', business:'Global Food Services', phone:'(813) 760-6805', details:{companyDesc:'Food manufacturing',challenge:'Inventory or warehouse control',software:'No, everything is manual',timeline:'Now',budget:'No',employees:'25'} }
@@ -292,7 +338,8 @@ const leadsByWeek = {
 { name:'Hrishikesh Trivedii', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 22', email:'cogpro398@gmail.com', business:'Advance Auto Parts', phone:'(732) 642-1722', details:{companyDesc:'Tortilla manufacturing',challenge:'Traceability and compliance',software:'Not sure',timeline:'3 months',budget:'100000',employees:'20'} },
 { name:'Rajesh Sinha', source:'Meta ads', pipeline:'General', date:'Apr 22', email:'rkstrade2255@gmail.com', business:'Rks Trade', phone:'(630) 988-2255', details:{companyDesc:'Importer',challenge:'Quality consistency and batch control',software:'No, everything is manual',timeline:'3-6 months',budget:'Na',employees:'Rkstrade2255@gmail.com'} },
 { name:'Luis Rivero', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 23', email:'luisr@lunafoods.net', business:'Masala Bliss', phone:'(225) 252-5358', details:{companyDesc:'Food manufacturing',challenge:'Production bottlenecks or downtime',software:'No, everything is manual',timeline:'No',budget:'No',employees:'2'} },
-{ name:'Pablo Ramirez', source:'LinkedIn', pipeline:'Meeting Booked', date:'Apr 23', email:'paulramirez898@gmail.com', business:'Molinos el Pais', phone:'+595 992 868619' }
+{ name:'Pablo Ramirez', source:'LinkedIn', pipeline:'Meeting Booked', date:'Apr 23', email:'paulramirez898@gmail.com', business:'Molinos el Pais', phone:'+595 992 868619', meetingBooked:true, meetingAttended:true },
+{ name:'Michael David Little', source:'Meta ads', pipeline:'Meta Lead', date:'Apr 25', email:'ceomdlittle@littlesombrerosalsa.com', business:'Little Sombrero Salsa LLC', phone:'(763) 340-4660', meetingBooked:true, details:{companyDesc:'--',website:'https://www.littlesombrerosalsa.com',challenge:'--',software:'--',timeline:'--',budget:'--',employees:'--',city:'New Hope, MN 55427'} }
 ],
 'apr-13': [
 { name:'Michael Crews', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 13', email:'michaelecrews1@gmail.com', business:'pure root', phone:'(929) 798-3186', details:{companyDesc:'Distributor',challenge:'Cost reduction or labor shortages',software:'Not sure',timeline:'2 months',budget:'100000',employees:'6'} },
@@ -307,9 +354,9 @@ const leadsByWeek = {
 { name:'Haji Tunkara', source:'Meta ads', pipeline:'looking for job/fake', date:'Apr 03', email:'hajitunkarah@gmail.com', business:'Works', phone:'(425) 552-0373' },
 { name:'Shaowen Li', source:'Meta ads', pipeline:'looking for job/fake', date:'Apr 02', email:'doggydoodle94@yahoo.com', business:'Shaowen', phone:'(510) 701-4702' },
 { name:'Ray Anej', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 02', email:'anejray72@gmail.com', business:'JBS', phone:'(385) 389-0410', details:{website:'https://jbsfoodsgroup.com/',challenge:'Traceability and compliance',software:'Yes, but it needs improvement',timeline:'yes',budget:'yes',employees:'yes I have experience 5 year'} },
-{ name:'Hector Galvan', source:'Meta ads', pipeline:'Tortilla', date:'Apr 02', email:'galvhector@gmail.com', business:'Del Comal Tortilla Factory', phone:'(281) 642-5826', status:'ongoing', details:{foodType:'tortilla',website:'https://www.delcomaltortillas.com/',challenge:'Too many manual processes',software:'Yes, but it needs improvement',timeline:'Asp',budget:'Mejorar',employees:40} },
+{ name:'Hector Galvan', source:'Meta ads', pipeline:'Tortilla', date:'Apr 02', email:'galvhector@gmail.com', business:'Del Comal Tortilla Factory', phone:'(281) 642-5826', status:'ongoing', meetingBooked:true, meetingAttended:true, details:{foodType:'tortilla',website:'https://www.delcomaltortillas.com/',challenge:'Too many manual processes',software:'Yes, but it needs improvement',timeline:'Asp',budget:'Mejorar',employees:40} },
 { name:'Antonio Aguilera', source:'Meta ads', pipeline:'General', date:'Apr 02', email:'admin@dreambloxx.com', business:'frogtown foods', phone:'(626) 200-5708', details:{foodType:'food truck',employees:5,budget:'no',timeline:'now',challenge:'Too many manual processes',software:'No, everything is manual'} },
-{ name:'Gregory Lereno', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 02', email:'glereno1@gmail.com', business:'El Greg Inc.', phone:'(847) 274-2504', details:{foodType:'Pies',website:'https://www.elgreg.com/',employees:12,budget:'No',timeline:'No',challenge:'Traceability and compliance',software:'Yes, but it needs improvement'} }
+{ name:'Gregory Lereno', source:'Meta ads', pipeline:'Food Manufacturer', date:'Apr 02', email:'glereno1@gmail.com', business:'El Greg Inc.', phone:'(847) 274-2504', meetingBooked:true, details:{foodType:'Pies',website:'https://www.elgreg.com/',employees:12,budget:'No',timeline:'No',challenge:'Traceability and compliance',software:'Yes, but it needs improvement'} }
 ],
 'mar-23': [
 { name:'Miguel Zavala', source:'Meta ads', pipeline:'Food Manufacturer', date:'Mar 25', email:'miguel_zavala9@hotmail.com', business:'Ajinomoto Food Service', phone:'+15107064602' },
@@ -317,7 +364,7 @@ const leadsByWeek = {
 ],
 'mar-16': [],
 'mar-09': [
-{ name:'Gisela Rodriguez', source:'Instagram', pipeline:'Food Manufacturer', date:'Mar 10', email:'contabilidad@pencas.com', business:'Mi Ranchito', phone:'+507 6615 1268' },
+{ name:'Gisela Rodriguez', source:'Instagram', pipeline:'Food Manufacturer', date:'Mar 10', email:'contabilidad@pencas.com', business:'Mi Ranchito', phone:'+507 6615 1268', meetingBooked:true },
 { name:'Marylou Navarro Hanna', source:'Meta ads', pipeline:'Food Manufacturers', date:'Mar 11', email:'marylou@pattyspizza.com', business:'Pattys pizza', phone:'+13108216150' }
 ],
 'mar-02': [
@@ -334,10 +381,10 @@ const leadsByWeek = {
 ]
 };
 const weeklyData = {
-'may-11': { outreachTotal:138, outreachBreakdown:"Enterpryze: 120 | Food: 18 | ERP: 0", pipelineCount:10, dateRange:"May 11 - 17", chartLabels:['May 11','May 12','May 13','May 14','May 15','May 16','May 17'], chartValues:[0,3,1,4,0,0,2], entSent:120, entOpen:"36.7%", entClick:"0%", entReply:"0%", foodSent:18, foodOpen:"11.11%", foodClick:"5.56%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
+'may-11': { outreachTotal:138, outreachBreakdown:"Enterpryze: 120 | Food: 18 | ERP: 0", pipelineCount:11, dateRange:"May 11 - 17", chartLabels:['May 11','May 12','May 13','May 14','May 15','May 16','May 17'], chartValues:[0,3,1,4,0,0,2], entSent:120, entOpen:"36.7%", entClick:"0%", entReply:"0%", foodSent:18, foodOpen:"11.11%", foodClick:"5.56%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
 'may-04': { outreachTotal:120, outreachBreakdown:"Enterpryze: 120 | Food: 0 | ERP: 0", pipelineCount:3, dateRange:"May 04 - 10", chartLabels:['May 04','May 05','May 06','May 07','May 08','May 09','May 10'], chartValues:[0,1,0,1,0,0,1], entSent:120, entOpen:"35.8%", entClick:"0%", entReply:"0%", foodSent:0, foodOpen:"0%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
 'apr-27': { outreachTotal:161, outreachBreakdown:"Enterpryze: 71 | Food: 21 | ERP: 69", pipelineCount:5, dateRange:"Apr 27 - May 03", chartLabels:['Apr 27','Apr 28','Apr 29','Apr 30','May 01','May 02','May 03'], chartValues:[1,1,0,1,1,1,0], entSent:71, entOpen:"37.5%", entClick:"0%", entReply:"0%", foodSent:21, foodOpen:"58.2%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:69, erpOpen:"31.4%", erpClick:"0%", erpReply:"4.8%" },
-'apr-20': { outreachTotal:155, outreachBreakdown:"Enterpryze: 72 | Food: 18 | ERP: 65", pipelineCount:5, dateRange:"Apr 20 - 26", chartLabels:['Apr 20','Apr 21','Apr 22','Apr 23','Apr 24','Apr 25','Apr 26'], chartValues:[0,0,3,2,0,0,0], entSent:72, entOpen:"36.1%", entClick:"0%", entReply:"0%", foodSent:18, foodOpen:"55.5%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:65, erpOpen:"30.8%", erpClick:"0%", erpReply:"4.6%" },
+'apr-20': { outreachTotal:155, outreachBreakdown:"Enterpryze: 72 | Food: 18 | ERP: 65", pipelineCount:6, dateRange:"Apr 20 - 26", chartLabels:['Apr 20','Apr 21','Apr 22','Apr 23','Apr 24','Apr 25','Apr 26'], chartValues:[0,0,3,2,0,1,0], entSent:72, entOpen:"36.1%", entClick:"0%", entReply:"0%", foodSent:18, foodOpen:"55.5%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:65, erpOpen:"30.8%", erpClick:"0%", erpReply:"4.6%" },
 'apr-13': { outreachTotal:166, outreachBreakdown:"Enterpryze: 68 | Food: 23 | ERP: 75", pipelineCount:5, dateRange:"Apr 13 - 19", chartLabels:['Apr 13','Apr 14','Apr 15','Apr 16','Apr 17','Apr 18','Apr 19'], chartValues:[2,1,0,0,3,0,0], entSent:68, entOpen:"38.5%", entClick:"0%", entReply:"0%", foodSent:23, foodOpen:"65.22%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:75, erpOpen:"32%", erpClick:"0%", erpReply:"5.33%" },
 'apr-06': { outreachTotal:134, outreachBreakdown:"Enterpryze: 75 | Food: 14 | ERP: 45", pipelineCount:1, dateRange:"Apr 06 - 12", chartLabels:['Apr 06','Apr 07','Apr 08','Apr 09','Apr 10','Apr 11','Apr 12'], chartValues:[0,1,0,0,0,0,0], entSent:75, entOpen:"0%", entClick:"0%", entReply:"0%", foodSent:14, foodOpen:"50%", foodClick:"7.14%", foodReply:"0%", foodLabel:"Email Sent", erpSent:45, erpOpen:"26.67%", erpClick:"0%", erpReply:"0%" },
 'mar-30': { outreachTotal:0, outreachBreakdown:"Enterpryze: 0 | Food: 0 | ERP: 0", pipelineCount:7, dateRange:"Mar 30 - Apr 05", chartLabels:['Mar 30','Mar 31','Apr 01','Apr 02','Apr 03','Apr 04','Apr 05'], chartValues:[0,0,0,5,2,0,0], entSent:0, entOpen:"0%", entClick:"0%", entReply:"0%", foodSent:0, foodOpen:"0%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
@@ -434,7 +481,7 @@ function parsePercent(str) { return parseFloat(str.replace('%', '')) || 0; }
 
 
 function getAggregatedData(keys) {
-    let agg = { outreachTotal:0, pipelineCount:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], chartFdaValues:[], chartFoodValues:[], leads:[], dateRange:'' };
+    let agg = { outreachTotal:0, pipelineCount:0, meetingsBooked:0, meetingsAttended:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], chartFdaValues:[], chartFoodValues:[], leads:[], dateRange:'' };
     let chronKeys = [...keys].reverse();
     chronKeys.forEach(key => {
         let data = weeklyData[key]; if (!data) return;
@@ -470,7 +517,7 @@ function getAggregatedData(keys) {
                 agg.chartFoodValues.push(foodDay);
             });
         }
-        if (leadsByWeek[key]) { agg.leads.push(...leadsByWeek[key]); }
+        if (leadsByWeek[key]) { agg.leads.push(...leadsByWeek[key]); leadsByWeek[key].forEach(l => { if(l.meetingBooked) agg.meetingsBooked++; if(l.meetingAttended) agg.meetingsAttended++; }); }
     });
     if (chronKeys.length > 0) { let s = weeklyData[chronKeys[0]]; let e = weeklyData[chronKeys[chronKeys.length-1]]; agg.dateRange = chronKeys.length===1 ? s.dateRange : s.dateRange.split(' - ')[0]+' - '+(e.dateRange.split(' - ')[1]||e.dateRange); }
     const fmt = (raw, sent) => sent > 0 ? (raw/sent*100).toFixed(1)+'%' : '0%';
@@ -505,6 +552,23 @@ function handleWeekChange(rangeValue) {
     document.getElementById('erpOpenRate').innerText = data.erpOpen;
     document.getElementById('erpClickRate').innerText = data.erpClick;
     document.getElementById('erpReplyRate').innerText = data.erpReply;
+
+    // Update funnel metrics
+    const totalLeads = data.leads.length;
+    const booked = data.meetingsBooked;
+    const attended = data.meetingsAttended;
+    const bookedPct = totalLeads > 0 ? (booked/totalLeads*100).toFixed(1) : '0';
+    const attendedPct = booked > 0 ? (attended/booked*100).toFixed(1) : '0';
+    document.getElementById('funnelTotalLeads').innerText = totalLeads;
+    document.getElementById('funnelBooked').innerText = booked;
+    document.getElementById('funnelBookedPct').innerText = bookedPct+'% of leads';
+    document.getElementById('funnelAttended').innerText = attended;
+    document.getElementById('funnelAttendedPct').innerText = attendedPct+'% of booked';
+    document.getElementById('funnelLeadsNum').innerText = totalLeads;
+    document.getElementById('funnelBookedNum').innerText = booked;
+    document.getElementById('funnelAttendedNum').innerText = attended;
+    document.getElementById('funnelBookedBar').style.width = (totalLeads > 0 ? (booked/totalLeads*100) : 0)+'%';
+    document.getElementById('funnelAttendedBar').style.width = (totalLeads > 0 ? (attended/totalLeads*100) : 0)+'%';
 
     if(document.getElementById('tab-summary').classList.contains('active')) { renderSummaryChart(data); }
     if(document.getElementById('leadsModal').style.display === 'flex') { populateLeadsModal(); }
