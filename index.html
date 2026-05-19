@@ -553,10 +553,9 @@ function handleWeekChange(rangeValue) {
     document.getElementById('erpClickRate').innerText = data.erpClick;
     document.getElementById('erpReplyRate').innerText = data.erpReply;
 
-    // Update funnel metrics
-    const totalLeads = data.leads.length;
-    const booked = data.meetingsBooked;
-    const attended = data.meetingsAttended;
+    // Update funnel metrics (always all-time)
+    let totalLeads = 0, booked = 0, attended = 0;
+    Object.values(leadsByWeek).forEach(weekLeads => { weekLeads.forEach(l => { totalLeads++; if(l.meetingBooked) booked++; if(l.meetingAttended) attended++; }); });
     const bookedPct = totalLeads > 0 ? (booked/totalLeads*100).toFixed(1) : '0';
     const attendedPct = booked > 0 ? (attended/booked*100).toFixed(1) : '0';
     document.getElementById('funnelTotalLeads').innerText = totalLeads;
