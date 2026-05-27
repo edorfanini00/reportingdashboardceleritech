@@ -75,7 +75,8 @@ LinkedIn Outreach
 <option value="1-week">Past 1 Week</option>
 </optgroup>
 <optgroup label="Specific Weeks">
-<option value="may-11" selected>May 11 - 17</option>
+<option value="may-18" selected>May 18 - 24</option>
+<option value="may-11">May 11 - 17</option>
 <option value="may-04">May 04 - 10</option>
 <option value="apr-27">Apr 27 - May 03</option>
 <option value="apr-20">Apr 20 - 26</option>
@@ -330,9 +331,20 @@ function showFunnelLeads(type) {
 
 let summaryChart = null;
 let currentViewData = null;
-const allWeeksInOrder = ['feb-23','mar-02','mar-09','mar-16','mar-23','mar-30','apr-06','apr-13','apr-20','apr-27','may-04','may-11'];
+const allWeeksInOrder = ['feb-23','mar-02','mar-09','mar-16','mar-23','mar-30','apr-06','apr-13','apr-20','apr-27','may-04','may-11','may-18'];
 
 const leadsByWeek = {
+'may-18': [
+        { name:'Jaden Sliveski', source:'Meta ads', pipeline:'FDA', date:'May 26', email:'supermac905@gmail.com', business:'Burger king employee', phone:'(609) 442-0513' },
+        { name:'Tahir Zuber', source:'Meta ads', pipeline:'Meta Lead', date:'May 25', email:'mofivestarinc@gmail.com', business:'Proprietorship', phone:'(630) 784-8377' },
+        { name:'Shane Wren', source:'Meta ads', pipeline:'Meta Lead', date:'May 23', email:'asterarx@yahoo.com', business:'Wren Endeavors', phone:'(603) 945-7718' },
+        { name:'Sheila Washington', source:'Meta ads', pipeline:'Meta Lead', date:'May 23', email:'sheilarwashington@gmail.com', business:'THE SHEILA NETWORK', phone:'(917) 474-6642' },
+        { name:'Mike Krail', source:'Meta ads', pipeline:'Meta Lead', date:'May 22', email:'mike@krail.us', business:'Good Liquid', phone:'(803) 493-5065' },
+        { name:'Steven Anderson', source:'Meta ads', pipeline:'Meta Lead', date:'May 20', email:'steve@signaturesauces.com', business:'Signature Sauces', phone:'(216) 642-4605', meetingBooked:true },
+        { name:'Angie Sandridge', source:'Meta ads', pipeline:'FDA', date:'May 20', email:'asandridge@ucsd.edu', business:'Ucsd', phone:'(619) 995-3649' },
+        { name:'James Michael Cendoma', source:'Meta ads', pipeline:'FDA', date:'May 19', email:'jimcendoma@gmail.com', business:'Sterling Innovations Group Inc', phone:'(607) 731-9032' },
+        { name:'Enzo Lihard', source:'Meta ads', pipeline:'FDA', date:'May 18', email:'enzo@mijatortilla.com', business:'Mija Tortilla Factory', phone:'(502) 953-4980' }
+],
 'may-11': [
         { name:'Fuentes', source:'Chat Widget', pipeline:'General', date:'May 18', email:'fuentesm56@gmail.com', business:'Unknown', phone:'--', meetingBooked:true },
         { name:'Mai Vue', source:'Meta ads', pipeline:'FDA', date:'May 17', email:'maiongvue02411@gmail.com', business:'LLC', phone:'(651) 283-1301', details:{companyDesc:'Other',challenge:'All of the above',software:'QuickBooks',timeline:'Within 30-90 days',budget:'--',employees:'1-25',role:'IT / Systems'} },
@@ -406,6 +418,7 @@ const leadsByWeek = {
 ]
 };
 const weeklyData = {
+'may-18': { outreachTotal:0, outreachBreakdown:"Enterpryze: 0 | Food: 0 | ERP: 0", pipelineCount:9, dateRange:"May 18 - 24", chartLabels:['May 18','May 19','May 20','May 21','May 22','May 23','May 24'], chartValues:[1,1,2,0,1,2,0], entSent:0, entOpen:"0%", entClick:"0%", entReply:"0%", foodSent:0, foodOpen:"0%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
 'may-11': { outreachTotal:138, outreachBreakdown:"Enterpryze: 120 | Food: 18 | ERP: 0", pipelineCount:11, dateRange:"May 11 - 17", chartLabels:['May 11','May 12','May 13','May 14','May 15','May 16','May 17'], chartValues:[0,3,1,4,0,0,2], entSent:120, entOpen:"36.7%", entClick:"0%", entReply:"0%", foodSent:18, foodOpen:"11.11%", foodClick:"5.56%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
 'may-04': { outreachTotal:120, outreachBreakdown:"Enterpryze: 120 | Food: 0 | ERP: 0", pipelineCount:3, dateRange:"May 04 - 10", chartLabels:['May 04','May 05','May 06','May 07','May 08','May 09','May 10'], chartValues:[0,1,0,1,0,0,1], entSent:120, entOpen:"35.8%", entClick:"0%", entReply:"0%", foodSent:0, foodOpen:"0%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
 'apr-27': { outreachTotal:161, outreachBreakdown:"Enterpryze: 71 | Food: 21 | ERP: 69", pipelineCount:5, dateRange:"Apr 27 - May 03", chartLabels:['Apr 27','Apr 28','Apr 29','Apr 30','May 01','May 02','May 03'], chartValues:[1,1,0,1,1,1,0], entSent:71, entOpen:"37.5%", entClick:"0%", entReply:"0%", foodSent:21, foodOpen:"58.2%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:69, erpOpen:"31.4%", erpClick:"0%", erpReply:"4.8%" },
@@ -616,7 +629,7 @@ function renderSummaryChart(data) {
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: hasFda || hasFood, position: 'top', labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 12, font: { size: 10, weight: 'bold' }, color: '#64748b' } }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.dataset.label+': '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { stacked: true, grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
     });
 }
-window.onload = () => handleWeekChange('may-11');
+window.onload = () => handleWeekChange('may-18');
 </script>
 </body>
 </html>
