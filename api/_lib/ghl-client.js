@@ -44,15 +44,23 @@ async function searchPage({ page, pageLimit, filters, searchAfter }) {
   return { batch: Array.isArray(batch) ? batch : [], total };
 }
 
-// Page through a single tag filter (results are small, so page-based is fine).
-async function searchByTagContains(value, pageLimit = 100, maxPages = 50) {
+// Tags to import. GHL's tag filter matches a whole tag (not a substring),
+// so we list the exact tag names. Override with GHL_TAGS="a,b,c" in env.
+function getQualifyingTagNames() {
+  const fromEnv = process.env.GHL_TAGS;
+  if (fromEnv) return fromEnv.split(',').map(t => t.trim()).filter(Boolean);
+  return ['meta lead', 'meta lead fda', 'fda'];
+}
+
+// Page through a single exact-tag filter (results are small).
+async function searchByTagEquals(tag, pageLimit = 100, maxPages = 50) {
   const all = [];
   let page = 1;
   for (let guard = 0; guard < maxPages; guard++) {
     const { batch } = await searchPage({
       page,
       pageLimit,
-      filters: [{ field: 'tags', operator: 'contains', value }],
+      filters: [{ field: 'tags', operator: 'eq', value: tag }],
     });
     all.push(...batch);
     if (batch.length < pageLimit) break;
@@ -61,12 +69,11 @@ async function searchByTagContains(value, pageLimit = 100, maxPages = 50) {
   return all;
 }
 
-// Fetch only contacts whose tags contain "meta" or "fda" (deduped).
-// Far cheaper than scanning every contact in large accounts.
+// Fetch contacts that have any qualifying tag (deduped by id).
 async function fetchQualifyingContacts() {
   const byId = new Map();
-  for (const value of ['meta', 'fda']) {
-    const contacts = await searchByTagContains(value);
+  for (const tag of getQualifyingTagNames()) {
+    const contacts = await searchByTagEquals(tag);
     for (const c of contacts) {
       const id = c.id || c.contactId || `${c.email || ''}-${c.phone || ''}`;
       byId.set(id, c);
