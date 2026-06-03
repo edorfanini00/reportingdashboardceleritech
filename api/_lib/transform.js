@@ -15,7 +15,7 @@ const DETAIL_FIELD_MAP = {
   role: ['role', 'your position', 'job title', 'title at', 'what is your role'],
   website: ['website', 'web site', 'company url', 'site url', 'linkedin url'],
   foodType: ['type of food', 'food type', 'what do you make', 'what do you produce', 'product type', 'what products'],
-  city: ['city you', 'city', 'location', 'where are you']
+  city: ['city you', 'city and time', 'city located', 'city']
 };
 
 function pick(obj, keys) {
