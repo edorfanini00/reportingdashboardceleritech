@@ -1,7 +1,7 @@
-// Bulk import: pulls ALL past + present GHL contacts tagged meta / meta fda.
+// Bulk import: pulls ALL GHL contacts, keeps those tagged meta / meta fda.
 const { transformContact, hasQualifyingTag, normalizeTags } = require('./_lib/transform');
 const { saveLead, isConfigured, getAllLeads } = require('./_lib/store');
-const { ghlConfigured, fetchAllQualifyingContacts } = require('./_lib/ghl-client');
+const { ghlConfigured, fetchAllContacts, collectTagSamples } = require('./_lib/ghl-client');
 
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -33,8 +33,10 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  const debug = req.query && (req.query.debug === '1' || req.query.debug === 'true');
+
   try {
-    const contacts = await fetchAllQualifyingContacts();
+    const contacts = await fetchAllContacts();
     let imported = 0;
     let skipped = 0;
 
@@ -50,13 +52,25 @@ module.exports = async function handler(req, res) {
     }
 
     const all = await getAllLeads();
-    res.status(200).json({
+    const response = {
       ok: true,
       fetched: contacts.length,
       imported,
       skipped,
       stored: all.length,
-    });
+    };
+
+    // Always include the distinct tags we saw so tag-name mismatches are obvious.
+    const tagCounts = collectTagSamples(contacts);
+    response.tagsFound = tagCounts;
+
+    if (debug) {
+      response.sampleContact = contacts[0]
+        ? { tags: contacts[0].tags, keys: Object.keys(contacts[0]) }
+        : null;
+    }
+
+    res.status(200).json(response);
   } catch (err) {
     res.status(500).json({ ok: false, error: String(err && err.message || err) });
   }

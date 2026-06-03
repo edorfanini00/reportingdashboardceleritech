@@ -659,7 +659,13 @@ async function importFromGhl() {
             return;
         }
         hideGhlBanner();
-        showGhlBanner('Imported ' + j.imported + ' contacts (' + j.stored + ' stored). Weeks are built from each lead dateAdded.');
+        if (j.imported === 0) {
+            const tags = j.tagsFound ? Object.keys(j.tagsFound) : [];
+            const tagList = tags.length ? tags.map(t => '"' + t + '"').join(', ') : 'none';
+            showGhlBanner('Fetched ' + j.fetched + ' contacts but matched 0 with tag "meta" or "meta fda". Tags actually found in GHL: ' + tagList + '. Rename your GHL tags to exactly meta / meta fda, or tell which tag to use.');
+        } else {
+            showGhlBanner('Imported ' + j.imported + ' contacts (' + j.stored + ' stored). Weeks are built from each lead dateAdded.');
+        }
         setSyncStatus('Imported ' + j.imported);
         await refreshLeads();
     } catch (e) {

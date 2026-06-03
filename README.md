@@ -2,51 +2,70 @@
 
 Marketing reporting dashboard for CeleriTech, deployed at [reportingdashboardceleritech.vercel.app](https://reportingdashboardceleritech.vercel.app).
 
-## Dashboards
+Leads from **GoHighLevel** with tags **`meta`** or **`meta fda`** sync automatically into the dashboard via webhook.
 
-| Page | URL | Purpose |
-|------|-----|---------|
-| Production | `/index.html` | Historical data + live GHL leads merged |
-| **GHL test** | `/ghl.html` | GHL-only view; import all past leads via API |
+## GoHighLevel setup
 
-## GoHighLevel sync (two ways)
+### 1. Deploy to Vercel
 
-1. **Webhook (real-time)** — workflow POSTs to `/api/webhook` when tag `meta` or `meta fda` is added.
-2. **Bulk import (all past leads)** — open **GHL Test Dashboard** → **Import all from GHL**, or `POST /api/sync`.
+1. Push this repo to GitHub and import the project in [Vercel](https://vercel.com).
+2. In the Vercel project → **Storage** → create a **KV** (or Upstash Redis) database and connect it to the project. This sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
+3. Redeploy after storage is linked.
 
-Leads are bucketed into **calendar weeks (Sun–Sat)** from each contact’s `dateAdded` / created date. New weeks appear automatically in the week picker.
+### 2. Optional webhook secret
 
-## Vercel environment variables
+In Vercel → **Settings → Environment Variables**, add:
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `KV_REST_API_URL` | Yes (auto) | From Vercel Storage / Upstash Redis |
-| `KV_REST_API_TOKEN` | Yes (auto) | From Vercel Storage |
-| `GHL_API_KEY` or `GHL_ACCESS_TOKEN` | For bulk import | Private integration token from GHL |
-| `GHL_LOCATION_ID` | For bulk import | Location ID (from GHL URL when viewing contacts) |
-| `WEBHOOK_SECRET` | Optional | Secures `/api/webhook` |
-| `SYNC_SECRET` | Optional | Secures `/api/sync` (falls back to `WEBHOOK_SECRET`) |
+| Variable | Description |
+|----------|-------------|
+| `WEBHOOK_SECRET` | Optional shared secret. GHL must send it as header `x-webhook-secret` or query `?secret=` |
 
-**Do not use Blob storage** — use Redis/KV.
+### 3. Create GHL workflows
 
-### Get GHL API credentials
+Create **two** workflows (or one with OR logic) in GoHighLevel:
 
-1. GHL → **Settings → Private Integrations** (or Developer Marketplace app).
-2. Create a token with **contacts.readonly** (or contacts scope).
-3. Copy **Location ID** from your dashboard URL when viewing Contacts.
+**Workflow A — tag `meta`**
 
-## GHL workflow (webhook)
+- **Trigger:** Contact Tag Added → tag is `meta`
+- **Action:** Webhook (POST)
+- **URL:** `https://YOUR-DOMAIN.vercel.app/api/webhook`
+- **Body:** send full contact payload (default GHL webhook fields are fine)
 
-- **Trigger:** Contact Tag Added → `meta` or `meta fda`
-- **Action:** Webhook POST → `https://reportingdashboardceleritech.vercel.app/api/webhook`
+**Workflow B — tag `meta fda`**
+
+- **Trigger:** Contact Tag Added → tag is `meta fda`
+- **Action:** Same webhook URL as above
+
+If you set `WEBHOOK_SECRET`, add a custom header `x-webhook-secret: YOUR_SECRET` in the webhook action.
+
+### 4. Backfill existing contacts (optional)
+
+For contacts already tagged before the webhook existed, run each contact through the workflow once (remove and re-add the tag), or POST sample payloads to `/api/webhook` with curl.
+
+### What gets synced
+
+| GHL tag | Dashboard pipeline |
+|---------|-------------------|
+| `meta` | Meta Lead |
+| `meta fda` | FDA |
+
+Other tags are ignored. The dashboard merges GHL leads with existing historical data and deduplicates by contact id or email.
+
+## Local development
+
+```bash
+npm install
+npx vercel dev
+```
+
+Open `http://localhost:3000`. API routes need Vercel dev (or linked env vars) for `/api/leads` and `/api/webhook`.
 
 ## API
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/webhook` | POST | Ingest one contact from GHL workflow |
-| `/api/sync` | POST/GET | Pull **all** contacts tagged meta / meta fda from GHL API |
-| `/api/leads` | GET | List stored leads for dashboards |
+| `/api/webhook` | POST | Receives GoHighLevel contact webhooks |
+| `/api/leads` | GET | Returns all stored GHL leads for the dashboard |
 
 ## Repository
 
