@@ -6,16 +6,16 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // Fuzzy mapping from the dashboard "details" keys to substrings that may appear
 // in a GHL custom-field label/key. First match wins. Edit freely as your forms change.
 const DETAIL_FIELD_MAP = {
-  companyDesc: ['company description', 'which best describes', 'best describes your', 'business type', 'type of business', 'company_desc', 'companydesc', 'describe your company', 'industry'],
-  challenge: ['challenge', 'biggest pain', 'pain point', 'struggling', 'problem you', 'main issue'],
-  software: ['current software', 'software', 'current system', 'currently using', 'erp', 'manage your', 'what system'],
-  timeline: ['timeline', 'time frame', 'timeframe', 'how soon', 'when do you', 'deadline', 'looking to start'],
-  budget: ['budget', 'investment', 'spend'],
-  employees: ['employees', 'team size', 'how many people', 'number of employees', 'headcount', 'staff'],
+  companyDesc: ['company description', 'which best describes', 'best describes your', 'business type', 'type of business', 'company_desc', 'companydesc', 'describe your company', 'industry', 'what industry'],
+  challenge: ['operational challenge', 'challenge', 'biggest pain', 'pain point', 'struggling', 'problem you', 'main issue', 'compliance concern'],
+  software: ['current software', 'currently use any software', 'software', 'current system', 'currently using', 'managing compliance records', 'manage your', 'what system'],
+  timeline: ['timeline', 'time frame', 'timeframe', 'how soon', 'when do you', 'deadline', 'looking to start', 'estimated time'],
+  budget: ['budget', 'investment', 'spend', 'estimated budget'],
+  employees: ['number of employees', 'how many employees', 'employees', 'team size', 'how many people', 'headcount', 'staff'],
   role: ['role', 'your position', 'job title', 'title at', 'what is your role'],
-  website: ['website', 'web site', 'company url', 'site url', 'url'],
+  website: ['website', 'web site', 'company url', 'site url', 'linkedin url'],
   foodType: ['type of food', 'food type', 'what do you make', 'what do you produce', 'product type', 'what products'],
-  city: ['city', 'location', 'address', 'where are you']
+  city: ['city you', 'city', 'location', 'where are you']
 };
 
 function pick(obj, keys) {
@@ -51,7 +51,8 @@ function pipelineFromTags(tags) {
 
 // Flatten a GHL payload into a single key/value bag of candidate fields,
 // merging top-level fields, customData, and various custom-field shapes.
-function flattenPayload(payload) {
+// fieldMap (optional): { customFieldId: { name, fieldKey } } resolves IDs to labels.
+function flattenPayload(payload, fieldMap) {
   const bag = {};
   const assign = (obj) => {
     if (!obj || typeof obj !== 'object') return;
@@ -73,8 +74,10 @@ function flattenPayload(payload) {
     || (payload.contact && (payload.contact.customFields || payload.contact.customField));
   if (Array.isArray(cf)) {
     cf.forEach(f => {
-      const key = f.name || f.key || f.id;
-      if (key) bag[key] = f.value !== undefined ? f.value : f.field_value;
+      const def = fieldMap && f.id ? fieldMap[f.id] : null;
+      const key = (def && (def.name || def.fieldKey)) || f.name || f.key || f.id;
+      const value = f.value !== undefined ? f.value : f.field_value;
+      if (key) bag[key] = value;
     });
   } else if (cf && typeof cf === 'object') {
     assign(cf);
@@ -85,7 +88,10 @@ function flattenPayload(payload) {
 // Build the lead.details object by fuzzy-matching all flattened fields.
 function extractDetails(bag) {
   const details = {};
-  const entries = Object.entries(bag).map(([k, v]) => [String(k).toLowerCase(), k, v]);
+  // Normalize keys: lowercase and turn _ / . separators into spaces so that
+  // both human labels ("Company description") and field keys
+  // ("contact.company_description") match the same fragments.
+  const entries = Object.entries(bag).map(([k, v]) => [String(k).toLowerCase().replace(/[._]+/g, ' '), k, v]);
   for (const [detailKey, fragments] of Object.entries(DETAIL_FIELD_MAP)) {
     for (const [lk, , value] of entries) {
       if (value === undefined || value === null || String(value).trim() === '') continue;
@@ -95,13 +101,24 @@ function extractDetails(bag) {
   return details;
 }
 
+// Find a value whose (normalized) field label contains any fragment.
+function findByLabel(bag, fragments) {
+  for (const [k, v] of Object.entries(bag)) {
+    if (v === undefined || v === null || String(v).trim() === '') continue;
+    const lk = String(k).toLowerCase().replace(/[._]+/g, ' ');
+    if (fragments.some(fr => lk.includes(fr))) return v;
+  }
+  return undefined;
+}
+
 function formatDisplayDate(d) {
   return MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate();
 }
 
 // Main transform: GHL payload -> dashboard lead object.
-function transformContact(payload) {
-  const bag = flattenPayload(payload);
+// fieldMap (optional) resolves custom-field IDs to labels for the details popup.
+function transformContact(payload, fieldMap) {
+  const bag = flattenPayload(payload, fieldMap);
   const tags = normalizeTags(pick(bag, ['tags', 'tag']) || payload.tags);
 
   const first = pick(bag, ['first_name', 'firstName', 'firstname']) || '';
@@ -112,7 +129,9 @@ function transformContact(payload) {
 
   const email = pick(bag, ['email', 'contact_email']) || 'Not Provided';
   const phone = pick(bag, ['phone', 'phone_number', 'contact_phone']) || '--';
-  const business = pick(bag, ['company_name', 'companyName', 'business', 'business_name', 'organization']) || 'Unknown';
+  const business = pick(bag, ['company_name', 'companyName', 'business', 'business_name', 'organization'])
+    || findByLabel(bag, ['business name'])
+    || 'Unknown';
 
   const rawDate = pick(bag, ['date_created', 'dateAdded', 'date_added', 'createdAt', 'created_at', 'dateCreated']);
   const dateObj = rawDate ? new Date(rawDate) : new Date();
