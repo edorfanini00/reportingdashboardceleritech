@@ -1,0 +1,9 @@
+{
+  "name": "reportingdashboardceleritech",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CeleriTech Marketing Dashboard with GoHighLevel live lead ingestion",
+  "dependencies": {
+    "@vercel/kv": "^3.0.0"
+  }
+}

@@ -61,6 +61,7 @@ LinkedIn Outreach
 </nav>
 </aside>
 <main class="flex-1 flex flex-col gap-4 overflow-visible md:overflow-hidden relative z-10">
+<div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 w-full">
 <div class="flex flex-col sm:flex-row sm:items-center gap-2 md:gap-3 w-full xl:w-auto">
 <h2 class="text-xl md:text-2xl font-bold text-slate-800 hidden sm:block">Welcome</h2>
 <div id="weekSelector" class="flex items-center gap-2 bg-white/50 backdrop-blur-md border border-white/80 rounded-xl px-3 shadow-sm w-full sm:w-auto">
@@ -74,7 +75,7 @@ LinkedIn Outreach
 <option value="2-weeks">Past 2 Weeks</option>
 <option value="1-week">Past 1 Week</option>
 </optgroup>
-<optgroup label="Specific Weeks">
+<optgroup label="Specific Weeks" id="specificWeeksGroup">
 <option value="may-18" selected>May 18 - 24</option>
 <option value="may-11">May 11 - 17</option>
 <option value="may-04">May 04 - 10</option>
@@ -92,10 +93,18 @@ LinkedIn Outreach
 </select>
 </div>
 </div>
-<div class="relative w-full xl:w-auto">
-<input type="text" placeholder="Search..." class="w-full xl:w-60 h-10 bg-white/50 border border-white/80 rounded-xl px-10 text-xs focus:outline-none focus:bg-white/80 transition-all text-slate-600">
-<svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+<div class="flex items-center gap-2 w-full xl:w-auto shrink-0">
+<div id="syncStatus" class="flex items-center gap-2 bg-white/50 border border-white/80 rounded-xl px-3 py-2 text-[10px] font-bold text-slate-500 shadow-sm whitespace-nowrap">
+<span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span>
+GoHighLevel
 </div>
+<button onclick="refreshGhlLeads()" id="refreshBtn" type="button" class="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl px-3 py-2 text-[11px] font-bold shadow-sm transition-colors">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+Sync
+</button>
+</div>
+</div>
+<div id="ghlBanner" class="hidden glass-card border border-amber-200 bg-amber-50/70 text-amber-800 text-xs font-semibold px-4 py-3 rounded-2xl"></div>
 <div class="flex-1 overflow-visible md:overflow-y-auto overflow-x-hidden scroll-container md:pr-2 pb-10 md:pb-2 max-w-full">
 <!-- Tab: Summary -->
 <section id="tab-summary" class="tab-content active space-y-4">
@@ -629,7 +638,143 @@ function renderSummaryChart(data) {
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: hasFda || hasFood, position: 'top', labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 12, font: { size: 10, weight: 'bold' }, color: '#64748b' } }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.dataset.label+': '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { stacked: true, grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
     });
 }
-window.onload = () => handleWeekChange('may-18');
+const GHL_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function ghlPad2(n) { return String(n).padStart(2, '0'); }
+function ghlWeekStart(iso) {
+    const d = new Date(iso);
+    const day = d.getUTCDay();
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day));
+}
+function ghlWeekKey(iso) {
+    const s = ghlWeekStart(iso);
+    return GHL_MONTHS[s.getUTCMonth()].toLowerCase() + '-' + ghlPad2(s.getUTCDate());
+}
+function ghlWeekRangeLabel(s) {
+    const e = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate() + 6));
+    const startStr = GHL_MONTHS[s.getUTCMonth()] + ' ' + ghlPad2(s.getUTCDate());
+    const endStr = (s.getUTCMonth() === e.getUTCMonth()) ? ghlPad2(e.getUTCDate()) : GHL_MONTHS[e.getUTCMonth()] + ' ' + ghlPad2(e.getUTCDate());
+    return startStr + ' - ' + endStr;
+}
+function weekSortKey(k) {
+    const [mon, day] = k.split('-');
+    const idx = GHL_MONTHS.findIndex(m => m.toLowerCase() === mon);
+    return (idx < 0 ? 0 : idx) * 100 + parseInt(day, 10);
+}
+function ensureWeekBucket(key, weekStart) {
+    if (leadsByWeek[key]) return;
+    const labels = [], values = [];
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(Date.UTC(weekStart.getUTCFullYear(), weekStart.getUTCMonth(), weekStart.getUTCDate() + i));
+        labels.push(GHL_MONTHS[d.getUTCMonth()] + ' ' + ghlPad2(d.getUTCDate()));
+        values.push(0);
+    }
+    leadsByWeek[key] = [];
+    weeklyData[key] = {
+        outreachTotal: 0, outreachBreakdown: 'Enterpryze: 0 | Food: 0 | ERP: 0', pipelineCount: 0,
+        dateRange: ghlWeekRangeLabel(weekStart), chartLabels: labels, chartValues: values,
+        entSent: 0, entOpen: '0%', entClick: '0%', entReply: '0%',
+        foodSent: 0, foodOpen: '0%', foodClick: '0%', foodReply: '0%', foodLabel: 'Email Sent',
+        erpSent: 0, erpOpen: '0%', erpClick: '0%', erpReply: '0%'
+    };
+    if (!allWeeksInOrder.includes(key)) {
+        allWeeksInOrder.push(key);
+        allWeeksInOrder.sort((a, b) => weekSortKey(a) - weekSortKey(b));
+    }
+}
+function rebuildWeekMetrics(key) {
+    const wl = leadsByWeek[key];
+    const data = weeklyData[key];
+    if (!data || !wl) return;
+    data.pipelineCount = wl.length;
+    data.chartValues = data.chartLabels.map(() => 0);
+    wl.forEach(l => {
+        const padded = String(l.date).replace(/^(\w{3})\s+(\d{1,2})$/, (m, mon, day) => mon + ' ' + ghlPad2(day));
+        const idx = data.chartLabels.indexOf(padded);
+        if (idx >= 0) data.chartValues[idx]++;
+    });
+}
+function rebuildWeekSelectOptions() {
+    const group = document.getElementById('specificWeeksGroup');
+    if (!group) return;
+    const current = document.getElementById('dateRangeSelect').value;
+    group.innerHTML = '';
+    [...allWeeksInOrder].reverse().forEach((k, i) => {
+        const o = document.createElement('option');
+        o.value = k;
+        o.textContent = weeklyData[k] ? weeklyData[k].dateRange : k;
+        if (i === 0 && !allWeeksInOrder.includes(current)) o.selected = true;
+        else if (k === current) o.selected = true;
+        group.appendChild(o);
+    });
+}
+function isDuplicateLead(bucket, lead) {
+    return bucket.some(l =>
+        (lead.id && l.id === lead.id) ||
+        (lead.email && lead.email !== 'Not Provided' && l.email &&
+         l.email !== 'Not Provided' && lead.email.toLowerCase() === l.email.toLowerCase())
+    );
+}
+function mergeGhlLeads(ghlLeads) {
+    let added = 0;
+    ghlLeads.forEach(lead => {
+        const iso = lead.dateISO || new Date().toISOString();
+        const weekStart = ghlWeekStart(iso);
+        const key = ghlWeekKey(iso);
+        ensureWeekBucket(key, weekStart);
+        if (!isDuplicateLead(leadsByWeek[key], lead)) {
+            leadsByWeek[key].push(lead);
+            added++;
+        }
+    });
+    Object.keys(leadsByWeek).forEach(rebuildWeekMetrics);
+    rebuildWeekSelectOptions();
+    return added;
+}
+function showGhlBanner(msg) {
+    const b = document.getElementById('ghlBanner');
+    b.textContent = msg;
+    b.classList.remove('hidden');
+}
+function hideGhlBanner() {
+    document.getElementById('ghlBanner').classList.add('hidden');
+}
+function setSyncStatus(text) {
+    document.getElementById('syncStatus').innerHTML =
+        '<span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span> ' + text;
+}
+async function refreshGhlLeads() {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.classList.add('opacity-60');
+    setSyncStatus('Syncing…');
+    try {
+        const r = await fetch('/api/leads', { cache: 'no-store' });
+        const j = await r.json();
+        if (j.configured === false) {
+            showGhlBanner('GoHighLevel storage is not set up yet. In Vercel, add a KV / Upstash Redis store, redeploy, then point your GHL workflow webhook to POST /api/webhook on this site. Historical leads below still show.');
+            setSyncStatus('GHL offline');
+        } else {
+            hideGhlBanner();
+            const added = mergeGhlLeads(j.leads || []);
+            const now = new Date();
+            setSyncStatus((j.count || 0) + ' GHL leads · ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (added ? ' (+' + added + ')' : ''));
+        }
+        const sel = document.getElementById('dateRangeSelect');
+        const latest = allWeeksInOrder[allWeeksInOrder.length - 1];
+        handleWeekChange(sel.value && (allWeeksInOrder.includes(sel.value) || ['all-time','1-year','3-months','1-month','2-weeks','1-week'].includes(sel.value)) ? sel.value : latest);
+    } catch (e) {
+        showGhlBanner('Could not reach /api/leads (' + e.message + '). Deploy on Vercel with the API routes for live GoHighLevel sync.');
+        setSyncStatus('Sync failed');
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-60');
+    }
+}
+window.onload = () => {
+    handleWeekChange('may-18');
+    refreshGhlLeads();
+    setInterval(refreshGhlLeads, 60000);
+};
 </script>
 </body>
 </html>
