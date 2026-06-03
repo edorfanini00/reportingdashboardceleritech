@@ -19,4 +19,8 @@ async function getAllLeads() {
   return Object.values(all);
 }
 
-module.exports = { saveLead, getAllLeads, isConfigured, HASH_KEY };
+async function deleteLead(id) {
+  await kv.hdel(HASH_KEY, id);
+}
+
+module.exports = { saveLead, getAllLeads, deleteLead, isConfigured, HASH_KEY };

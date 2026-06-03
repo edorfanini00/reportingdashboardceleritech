@@ -1,6 +1,6 @@
 // Bulk import: pulls ALL GHL contacts, keeps those tagged meta / meta fda.
 const { transformContact, hasQualifyingTag, normalizeTags } = require('./_lib/transform');
-const { saveLead, isConfigured, getAllLeads } = require('./_lib/store');
+const { saveLead, isConfigured, getAllLeads, deleteLead } = require('./_lib/store');
 const { ghlConfigured, fetchQualifyingContacts, collectTagSamples } = require('./_lib/ghl-client');
 
 module.exports = async function handler(req, res) {
@@ -34,6 +34,25 @@ module.exports = async function handler(req, res) {
   }
 
   const debug = req.query && (req.query.debug === '1' || req.query.debug === 'true');
+
+  // One-off cleanup: ?purgeTests=1 removes leads with example.com / test.com emails.
+  if (req.query && (req.query.purgeTests === '1' || req.query.purgeTests === 'true')) {
+    try {
+      const all = await getAllLeads();
+      const removed = [];
+      for (const l of all) {
+        const email = (l.email || '').toLowerCase();
+        if (email.includes('example.com') || email.includes('@test.com')) {
+          await deleteLead(l.id);
+          removed.push(l.id);
+        }
+      }
+      res.status(200).json({ ok: true, purged: removed.length, removed });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err && err.message || err) });
+    }
+    return;
+  }
 
   try {
     const { contacts, total } = await fetchQualifyingContacts();
