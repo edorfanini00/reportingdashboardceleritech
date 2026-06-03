@@ -37,7 +37,7 @@ module.exports = async function handler(req, res) {
     const tags = normalizeTags(payload.tags || (payload.contact && payload.contact.tags) || payload.tag);
 
     if (!hasQualifyingTag(tags)) {
-      res.status(200).json({ ok: true, skipped: true, reason: 'Contact must have tag "meta" or "meta fda"', tags });
+      res.status(200).json({ ok: true, skipped: true, reason: 'Contact must have a meta / fda tag (e.g. "meta lead", "meta lead fda", "fda")', tags });
       return;
     }
 

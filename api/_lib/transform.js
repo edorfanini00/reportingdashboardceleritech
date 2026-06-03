@@ -32,17 +32,20 @@ function normalizeTags(raw) {
   return String(raw).split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
 }
 
-// Only contacts tagged "meta" or "meta fda" in GoHighLevel should sync.
+// Meta-sourced leads in GoHighLevel are tagged "meta lead" / "meta lead fda"
+// (and an "fda" tag). Any tag containing "meta" or "fda" qualifies.
 function hasQualifyingTag(tags) {
   const normalized = normalizeTags(tags);
-  return normalized.some(t => t === 'meta' || t === 'meta fda');
+  return normalized.some(t => t.includes('meta') || t.includes('fda'));
 }
 
-// Returns 'FDA' / 'Meta Lead' / 'General' based on tags.
+// Returns 'FDA' / 'Food Manufacturer' / 'Meta Lead' / 'General' based on tags.
 function pipelineFromTags(tags) {
   const normalized = normalizeTags(tags);
-  if (normalized.some(t => t === 'meta fda')) return 'FDA';
-  if (normalized.some(t => t === 'meta')) return 'Meta Lead';
+  const has = (s) => normalized.some(t => t.includes(s));
+  if (has('fda')) return 'FDA';
+  if (has('food manufacturer')) return 'Food Manufacturer';
+  if (has('meta')) return 'Meta Lead';
   return 'General';
 }
 
