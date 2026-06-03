@@ -1,7 +1,7 @@
 // Bulk import: pulls ALL GHL contacts, keeps those tagged meta / meta fda.
 const { transformContact, hasQualifyingTag, normalizeTags } = require('./_lib/transform');
 const { saveLead, isConfigured, getAllLeads, deleteLead } = require('./_lib/store');
-const { ghlConfigured, fetchQualifyingContacts, collectTagSamples } = require('./_lib/ghl-client');
+const { ghlConfigured, fetchQualifyingContacts, fetchCustomFieldDefs, collectTagSamples } = require('./_lib/ghl-client');
 
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -85,9 +85,16 @@ module.exports = async function handler(req, res) {
     response.tagsFound = tagCounts;
 
     if (debug) {
-      response.sampleContact = contacts[0]
-        ? { tags: contacts[0].tags, keys: Object.keys(contacts[0]) }
+      const sample = contacts.find(c => Array.isArray(c.customFields) && c.customFields.length) || contacts[0];
+      response.sampleContact = sample
+        ? { tags: sample.tags, customFields: sample.customFields, keys: Object.keys(sample) }
         : null;
+      try {
+        const defs = await fetchCustomFieldDefs();
+        response.customFieldDefs = defs.fields.map(f => ({ id: f.id, name: f.name, fieldKey: f.fieldKey, dataType: f.dataType }));
+      } catch (e) {
+        response.customFieldDefsError = String(e && e.message || e);
+      }
     }
 
     res.status(200).json(response);

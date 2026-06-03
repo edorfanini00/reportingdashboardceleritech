@@ -114,4 +114,35 @@ function collectTagSamples(contacts) {
   return counts;
 }
 
-module.exports = { ghlConfigured, fetchQualifyingContacts, fetchAllContacts, collectTagSamples, searchPage };
+// Fetch custom field definitions for the location (id -> name/fieldKey).
+async function fetchCustomFieldDefs() {
+  const { token, locationId } = getCredentials();
+  const url = `https://services.leadconnectorhq.com/locations/${locationId}/customFields?model=contact`;
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Version: '2021-07-28',
+      Accept: 'application/json',
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`GHL customFields failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const fields = data.customFields || data.customField || data.fields || [];
+  const map = {};
+  for (const f of fields) {
+    if (f && f.id) map[f.id] = { name: f.name, fieldKey: f.fieldKey, dataType: f.dataType };
+  }
+  return { map, fields };
+}
+
+module.exports = {
+  ghlConfigured,
+  fetchQualifyingContacts,
+  fetchAllContacts,
+  fetchCustomFieldDefs,
+  collectTagSamples,
+  searchPage,
+};
