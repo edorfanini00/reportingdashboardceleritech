@@ -14,9 +14,12 @@ function getCredentials() {
   };
 }
 
-async function searchPage({ page, pageLimit, filters }) {
+async function searchPage({ page, pageLimit, filters, searchAfter }) {
   const { token, locationId } = getCredentials();
-  const body = { locationId, page, pageLimit };
+  const body = { locationId, pageLimit };
+  // searchAfter cursor paginates beyond the 10k page-based limit.
+  if (searchAfter) body.searchAfter = searchAfter;
+  else if (page) body.page = page;
   if (filters) body.filters = filters;
 
   const res = await fetch(GHL_API, {
@@ -37,21 +40,29 @@ async function searchPage({ page, pageLimit, filters }) {
 
   const data = await res.json();
   const batch = data.contacts || data.contact || data.data || [];
-  const nextPage = data.meta && data.meta.nextPage;
-  return { batch: Array.isArray(batch) ? batch : [], nextPage };
+  const total = data.total != null ? data.total : (data.meta && data.meta.total);
+  return { batch: Array.isArray(batch) ? batch : [], total };
 }
 
-// Fetch every contact in the location (paginated), no tag filter.
-async function fetchAllContacts(pageLimit = 100, maxPages = 100) {
+// Fetch every contact in the location using searchAfter cursor pagination.
+async function fetchAllContacts(pageLimit = 100, maxPages = 500) {
   const all = [];
-  let page = 1;
+  let searchAfter = null;
+  let total = null;
+
   for (let guard = 0; guard < maxPages; guard++) {
-    const { batch, nextPage } = await searchPage({ page, pageLimit });
-    all.push(...batch);
-    if (!batch.length || !nextPage) break;
-    page = typeof nextPage === 'number' ? nextPage : page + 1;
+    const res = await searchPage(searchAfter ? { pageLimit, searchAfter } : { page: 1, pageLimit });
+    if (total == null) total = res.total;
+    if (!res.batch.length) break;
+    all.push(...res.batch);
+
+    const last = res.batch[res.batch.length - 1];
+    const cursor = last && last.searchAfter;
+    if (!cursor || res.batch.length < pageLimit) break;
+    searchAfter = cursor;
   }
-  return all;
+
+  return { contacts: all, total };
 }
 
 // Build a frequency map of all tag names seen, preserving original casing.

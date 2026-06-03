@@ -36,7 +36,7 @@ module.exports = async function handler(req, res) {
   const debug = req.query && (req.query.debug === '1' || req.query.debug === 'true');
 
   try {
-    const contacts = await fetchAllContacts();
+    const { contacts, total } = await fetchAllContacts();
     let imported = 0;
     let skipped = 0;
 
@@ -55,6 +55,7 @@ module.exports = async function handler(req, res) {
     const response = {
       ok: true,
       fetched: contacts.length,
+      totalInGhl: total != null ? total : 'unknown',
       imported,
       skipped,
       stored: all.length,
