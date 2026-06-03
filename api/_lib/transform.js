@@ -61,8 +61,13 @@ function flattenPayload(payload) {
   assign(payload);
   assign(payload.customData);
   assign(payload.contact);
-  // customFields can be an array of { id/key/name, value } or an object map.
-  const cf = payload.customFields || payload.custom_fields || (payload.contact && payload.contact.customFields);
+  // GHL API search returns nested contact; webhook may send flat body.
+  if (payload.contact && typeof payload.contact === 'object') {
+    const c = payload.contact;
+    assign({ firstName: c.firstName, lastName: c.lastName, email: c.email, phone: c.phone, companyName: c.companyName, tags: c.tags, dateAdded: c.dateAdded, id: c.id });
+  }
+  const cf = payload.customFields || payload.custom_fields || payload.customField
+    || (payload.contact && (payload.contact.customFields || payload.contact.customField));
   if (Array.isArray(cf)) {
     cf.forEach(f => {
       const key = f.name || f.key || f.id;

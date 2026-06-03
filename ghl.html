@@ -2,11 +2,679 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="refresh" content="0; url=index.html">
-    <title>Redirecting…</title>
-    <script>location.replace('index.html');</script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CeleriTech — GHL Test Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); color: #1e293b; overflow-x: hidden; }
+        html { overflow-x: hidden; }
+        .glass-panel { background: rgba(255,255,255,0.35); backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%); border: 1px solid rgba(255,255,255,0.5); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.03); }
+        .glass-card { background: rgba(255,255,255,0.5); backdrop-filter: blur(25px); border: 1px solid rgba(255,255,255,0.6); border-radius: 24px; transition: all 0.3s cubic-bezier(0.4,0,0.2,1); }
+        @media (min-width:768px) { .glass-card { border-radius: 28px; } }
+        .glass-card-hover:hover { background: rgba(255,255,255,0.8); transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.03); }
+        .sidebar-item { display:flex; align-items:center; gap:10px; padding:10px 16px; border-radius:16px; color:#64748b; font-weight:500; transition:all 0.3s ease; font-size:14px; white-space:nowrap; flex-shrink:0; }
+        @media (min-width:768px) { .sidebar-item { padding:12px 18px; } }
+        .sidebar-item.active { background:white; color:#1e293b; box-shadow:0 8px 20px rgba(0,0,0,0.04); }
+        .sidebar-item.active svg { color:#f97316; }
+        .glass-select { appearance:none; background:rgba(255,255,255,0.6); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.8); padding:8px 32px 8px 14px; border-radius:12px; font-size:13px; font-weight:600; color:#475569; cursor:pointer; outline:none; }
+        .campaign-pill { padding:6px 16px; border-radius:10px; font-size:12px; font-weight:600; color:#64748b; background:rgba(255,255,255,0.3); border:1px solid rgba(255,255,255,0.5); transition:all 0.2s ease; white-space:nowrap; }
+        .campaign-pill.active { background:#f97316; color:white; border-color:#f97316; }
+        .modal-backdrop { background:rgba(226,232,240,0.4); backdrop-filter:blur(15px); -webkit-backdrop-filter:blur(15px); display:none; align-items:center; justify-content:center; position:fixed; inset:0; z-index:100; padding:16px; }
+        .scroll-container::-webkit-scrollbar { width:4px; height:4px; }
+        .scroll-container::-webkit-scrollbar-thumb { background:rgba(0,0,0,0.08); border-radius:10px; }
+        .tab-content, .campaign-content { display:none; height:100%; }
+        .tab-content.active, .campaign-content.active { display:flex; flex-direction:column; animation:fadeIn 0.4s ease; }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        .mini-bar { width:4px; background:#fb923c; border-radius:2px; opacity:0.15; }
+        .mini-bar.active { opacity:0.8; }
+    </style>
 </head>
-<body>
-    <p><a href="index.html">Open dashboard</a></p>
+<body class="min-h-[100dvh] w-full flex md:items-center justify-center md:p-4 lg:p-8 md:overflow-hidden overflow-x-hidden">
+<div class="glass-panel w-full max-w-[1400px] min-h-[100dvh] md:min-h-0 md:h-[95vh] rounded-none md:rounded-[40px] p-3 md:p-6 flex flex-col md:flex-row gap-3 md:gap-6 md:overflow-hidden overflow-x-hidden">
+<aside class="w-full md:w-60 flex flex-col shrink-0 border-b md:border-b-0 md:border-r border-white/20 md:pr-4 z-50 relative">
+<div class="flex items-center justify-between md:flex-col md:items-start gap-2 md:gap-4 mb-1 md:mb-10 px-1 md:px-2 pt-1 md:pt-0">
+<div class="flex items-center gap-3">
+<img src="A-color.png" alt="CeleriTech Logo" class="h-6 md:h-9 object-contain shrink-0" onerror="this.src='https://placehold.co/180x50/f97316/ffffff?text=CeleriTech'">
+<h1 class="md:hidden text-[10px] font-black tracking-widest text-slate-500 uppercase mt-1">GHL Test</h1>
+</div>
+<button id="mobileMenuBtn" class="md:hidden text-slate-500 p-2 hover:bg-slate-200/50 rounded-lg transition-colors focus:outline-none" onclick="toggleMobileMenu()">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+</button>
+<div class="hidden md:block h-px w-full bg-gradient-to-r from-orange-500/50 to-transparent"></div>
+<h1 class="hidden md:block text-[10px] md:text-xs font-black tracking-widest text-slate-500 uppercase">GHL Test · Live</h1>
+</div>
+<nav id="sidebarNav" class="hidden md:flex absolute md:static top-full left-0 w-full md:w-auto bg-white/95 md:bg-transparent backdrop-blur-2xl md:backdrop-blur-none shadow-2xl md:shadow-none border-b border-white/50 md:border-none p-4 md:p-0 rounded-b-3xl md:rounded-none flex-col gap-2 z-50 transition-all origin-top">
+<button onclick="switchTab('summary')" id="btn-summary" class="sidebar-item active">
+<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z"></path></svg>
+Summary
+</button>
+<button onclick="switchTab('emails')" id="btn-emails" class="sidebar-item">
+<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+Emails
+</button>
+<button onclick="switchTab('linkedin')" id="btn-linkedin" class="sidebar-item">
+<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+LinkedIn Outreach
+</button>
+<a href="index.html" class="sidebar-item mt-2 border border-dashed border-slate-300/70">
+<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1h-2z"></path></svg>
+Production Dashboard
+</a>
+
+</nav>
+</aside>
+<main class="flex-1 flex flex-col gap-4 overflow-visible md:overflow-hidden relative z-10">
+<div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 w-full">
+<div class="flex flex-col sm:flex-row sm:items-center gap-2 md:gap-3 w-full xl:w-auto">
+<h2 class="text-xl md:text-2xl font-bold text-slate-800 hidden sm:block">Welcome</h2>
+<div id="weekSelector" class="flex items-center gap-2 bg-white/50 backdrop-blur-md border border-white/80 rounded-xl px-3 shadow-sm w-full sm:w-auto">
+<svg class="w-4 h-4 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+<select class="bg-transparent border-none outline-none text-sm font-bold text-slate-700 py-2.5 cursor-pointer appearance-none pr-6 w-full" id="dateRangeSelect" onchange="handleWeekChange(this.value)" style="background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E&quot;); background-repeat: no-repeat; background-position: right center; background-size: 14px;">
+<optgroup label="Quick Select">
+<option value="all-time">All Time</option>
+<option value="1-year">Past 1 Year</option>
+<option value="3-months">Past 3 Months</option>
+<option value="1-month">Past 1 Month</option>
+<option value="2-weeks">Past 2 Weeks</option>
+<option value="1-week">Past 1 Week</option>
+</optgroup>
+<optgroup label="Specific Weeks" id="specificWeeksGroup"></optgroup>
+</select>
+</div>
+</div>
+<div class="flex items-center gap-2 w-full xl:w-auto shrink-0">
+<div id="syncStatus" class="flex items-center gap-2 bg-white/50 border border-white/80 rounded-xl px-3 py-2 text-[10px] font-bold text-slate-500 shadow-sm whitespace-nowrap">
+<span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span>
+GoHighLevel
+</div>
+<button onclick="importFromGhl()" id="importBtn" type="button" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl px-3 py-2 text-[11px] font-bold shadow-sm transition-colors">Import all from GHL</button>
+<button onclick="refreshLeads()" id="refreshBtn" type="button" class="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl px-3 py-2 text-[11px] font-bold shadow-sm transition-colors">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+Sync
+</button>
+</div>
+</div>
+<div id="ghlBanner" class="hidden glass-card border border-amber-200 bg-amber-50/70 text-amber-800 text-xs font-semibold px-4 py-3 rounded-2xl"></div>
+<div class="flex-1 overflow-visible md:overflow-y-auto overflow-x-hidden scroll-container md:pr-2 pb-10 md:pb-2 max-w-full">
+<!-- Tab: Summary -->
+<section id="tab-summary" class="tab-content active space-y-4">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<div class="glass-card p-5 md:p-6">
+<div class="flex justify-between items-start mb-4">
+<div>
+<p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Weekly Outreach</p>
+<h3 class="text-2xl md:text-3xl font-black text-slate-800 tracking-tight" id="outreachSentCount">0 Sent</h3>
+</div>
+<div class="w-8 h-8 md:w-9 md:h-9 bg-orange-50 rounded-lg flex items-center justify-center text-orange-500 shrink-0">
+<svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12"></path></svg>
+</div>
+</div>
+<div class="flex items-end gap-1 h-10 md:h-12 mb-4">
+<div class="mini-bar h-[20%] active"></div><div class="mini-bar h-[10%] active"></div><div class="mini-bar h-[30%] active"></div><div class="mini-bar h-[25%] active"></div><div class="mini-bar h-[40%] active"></div><div class="mini-bar h-[45%] active"></div><div class="mini-bar h-[22%] active"></div><div class="mini-bar h-[32%] active"></div><div class="mini-bar h-[42%] active"></div><div class="mini-bar h-[15%]"></div><div class="mini-bar h-[37%]"></div><div class="mini-bar h-[27%]"></div><div class="mini-bar h-[47%]"></div><div class="mini-bar h-[30%]"></div>
+</div>
+<div class="bg-orange-50/40 rounded-xl p-3 flex flex-col sm:flex-row sm:justify-between sm:items-center border border-orange-100/50 gap-2">
+<span class="text-[10px] sm:text-xs font-bold text-orange-600" id="outreachStatus">Calculated from Email Tabs</span>
+<span class="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-tighter text-left sm:text-right" id="outreachBreakdown">Enterpryze: 0 | Food: 0 | ERP: 0</span>
+</div>
+</div>
+<div onclick="toggleModal(true)" class="glass-card glass-card-hover p-5 md:p-6 cursor-pointer group">
+<div class="flex justify-between items-start mb-4">
+<div>
+<p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">New Pipeline</p>
+<h3 class="text-2xl md:text-3xl font-black text-slate-800 tracking-tight" id="pipelineLeadCount">2 Leads</h3>
+</div>
+<div class="w-8 h-8 md:w-9 md:h-9 bg-orange-50 rounded-lg flex items-center justify-center text-orange-500 shrink-0">
+<svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+</div>
+</div>
+<div class="flex items-center gap-3 mb-4 md:mb-6">
+<div class="bg-orange-50 text-orange-600 text-[9px] font-bold px-3 py-1 rounded-full flex items-center gap-2 border border-orange-100">
+<span class="w-1 h-1 bg-orange-500 rounded-full animate-pulse"></span>
+ACTIVE PIPELINE
+</div>
+</div>
+<p class="text-[10px] md:text-[11px] text-slate-400 font-medium italic underline">View lead detailed history</p>
+</div>
+
+</div>
+<!-- Lead Conversion Funnel -->
+<div class="glass-card p-5 md:p-6">
+<div class="flex justify-between items-start mb-5">
+<div>
+<p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Lead Conversion Funnel</p>
+<h3 class="text-lg md:text-xl font-black text-slate-800 tracking-tight">Pipeline Performance</h3>
+</div>
+<div class="w-8 h-8 md:w-9 md:h-9 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-500 shrink-0">
+<svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+</div>
+</div>
+<div class="grid grid-cols-3 gap-3 md:gap-4 mb-5">
+<div class="text-center bg-slate-50/80 rounded-2xl p-3 md:p-4 border border-slate-100/50">
+<p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Total Leads</p>
+<p class="text-2xl md:text-3xl font-black text-slate-800" id="funnelTotalLeads">0</p>
+</div>
+<div onclick="showFunnelLeads('booked')" class="text-center bg-orange-50/60 rounded-2xl p-3 md:p-4 border border-orange-100/50 cursor-pointer hover:bg-orange-50 hover:shadow-md transition-all">
+<p class="text-[8px] md:text-[9px] font-bold text-orange-400 uppercase tracking-widest mb-2">Meetings Booked</p>
+<p class="text-2xl md:text-3xl font-black text-orange-500" id="funnelBooked">0</p>
+<p class="text-[10px] md:text-[11px] text-orange-400 font-bold mt-1" id="funnelBookedPct">0% of leads</p>
+</div>
+<div onclick="showFunnelLeads('attended')" class="text-center bg-emerald-50/60 rounded-2xl p-3 md:p-4 border border-emerald-100/50 cursor-pointer hover:bg-emerald-50 hover:shadow-md transition-all">
+<p class="text-[8px] md:text-[9px] font-bold text-emerald-400 uppercase tracking-widest mb-2">Attended</p>
+<p class="text-2xl md:text-3xl font-black text-emerald-500" id="funnelAttended">0</p>
+<p class="text-[10px] md:text-[11px] text-emerald-400 font-bold mt-1" id="funnelAttendedPct">0% of booked</p>
+</div>
+</div>
+<div class="space-y-2">
+<div class="flex items-center gap-3">
+<span class="text-[9px] font-bold text-slate-400 uppercase w-14 shrink-0">Leads</span>
+<div class="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-slate-700 rounded-full transition-all duration-700" style="width:100%"></div></div>
+<span class="text-[9px] font-bold text-slate-500 w-8 text-right" id="funnelLeadsNum">0</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-[9px] font-bold text-orange-400 uppercase w-14 shrink-0">Booked</span>
+<div class="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-orange-500 rounded-full transition-all duration-700" id="funnelBookedBar" style="width:0%"></div></div>
+<span class="text-[9px] font-bold text-slate-500 w-8 text-right" id="funnelBookedNum">0</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-[9px] font-bold text-emerald-400 uppercase w-14 shrink-0">Attended</span>
+<div class="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-emerald-500 rounded-full transition-all duration-700" id="funnelAttendedBar" style="width:0%"></div></div>
+<span class="text-[9px] font-bold text-slate-500 w-8 text-right" id="funnelAttendedNum">0</span>
+</div>
+</div>
+</div>
+<!-- Lead Intake Schedule Chart -->
+<div class="glass-card p-4 md:p-6">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 md:mb-6 gap-2">
+<div>
+<h4 class="text-base md:text-lg font-bold text-slate-800">Lead Intake Schedule</h4>
+<p class="text-[10px] md:text-[11px] text-slate-400 font-medium" id="chartDateContext">Tracking arrival dates for Mar 30 - Apr 05</p>
+</div>
+</div>
+<div class="h-[220px] md:h-[280px] w-full">
+<canvas id="leadsSummaryChart"></canvas>
+</div>
+</div>
+</section>
+<!-- Tab: Emails -->
+<section id="tab-emails" class="tab-content space-y-4">
+<div class="flex overflow-x-auto scroll-container gap-2 mb-2 pb-1 shrink-0">
+<button onclick="switchCampaign('enterpryze')" id="pill-enterpryze" class="campaign-pill active">Enterpryze</button>
+<button onclick="switchCampaign('food')" id="pill-food" class="campaign-pill">Food Manufacturer</button>
+<button onclick="switchCampaign('erp')" id="pill-erp" class="campaign-pill">ERP Qualified</button>
+</div>
+<div id="campaign-enterpryze" class="campaign-content active space-y-4">
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Emails Sent</p><p class="text-xl md:text-2xl font-black text-slate-800" id="entSentCount">0</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Open Rate</p><p class="text-xl md:text-2xl font-black text-orange-500" id="entOpenRate">0%</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Click Rate</p><p class="text-xl md:text-2xl font-black text-slate-800" id="entClickRate">0%</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Reply Rate</p><p class="text-xl md:text-2xl font-black text-emerald-500" id="entReplyRate">0%</p></div>
+</div>
+</div>
+<div id="campaign-food" class="campaign-content space-y-4">
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1" id="foodLabel">Email Sent</p><p class="text-xl md:text-2xl font-black text-slate-800" id="foodSentCount">0</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Open Rate</p><p class="text-xl md:text-2xl font-black text-orange-500" id="foodOpenRate">0%</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Click Rate</p><p class="text-xl md:text-2xl font-black text-slate-800" id="foodClickRate">0%</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Reply Rate</p><p class="text-xl md:text-2xl font-black text-emerald-500" id="foodReplyRate">0%</p></div>
+</div>
+</div>
+<div id="campaign-erp" class="campaign-content space-y-4">
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Emails Sent</p><p class="text-xl md:text-2xl font-black text-slate-800" id="erpSentCount">0</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Open Rate</p><p class="text-xl md:text-2xl font-black text-orange-500" id="erpOpenRate">0%</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Click Rate</p><p class="text-xl md:text-2xl font-black text-slate-800" id="erpClickRate">0%</p></div>
+<div class="glass-card p-3 md:p-4 flex flex-col items-center justify-center text-center"><p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Reply Rate</p><p class="text-xl md:text-2xl font-black text-emerald-500" id="erpReplyRate">0%</p></div>
+</div>
+</div>
+</section>
+<!-- Tab: LinkedIn -->
+<section id="tab-linkedin" class="tab-content space-y-4">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+<div class="glass-card p-5 md:p-6 flex flex-col">
+<div class="flex items-center justify-between mb-4 md:mb-6">
+<h3 class="text-base md:text-lg font-bold text-slate-800 tracking-tight">Number of Invitations</h3>
+<div class="text-orange-500"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg></div>
+</div>
+<div class="space-y-3 md:space-y-4">
+<div class="flex items-center justify-between py-2 border-b border-slate-100/50"><span class="text-xs md:text-sm font-medium text-slate-500">Invitations Sent</span><span class="text-lg md:text-xl font-black text-slate-800">418</span></div>
+<div class="flex items-center justify-between py-2 border-b border-slate-100/50"><span class="text-xs md:text-sm font-medium text-slate-500">Invitations Accepted</span><span class="text-lg md:text-xl font-black text-emerald-500">66</span></div>
+<div class="flex items-center justify-between py-2"><span class="text-xs md:text-sm font-medium text-slate-500">Acceptance Rate</span><span class="text-lg md:text-xl font-black text-slate-800">15.8%</span></div>
+</div>
+</div>
+<div class="glass-card p-5 md:p-6 flex flex-col">
+<div class="flex items-center justify-between mb-4 md:mb-6">
+<h3 class="text-base md:text-lg font-bold text-slate-800 tracking-tight">Number of Messages</h3>
+<div class="text-orange-500"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg></div>
+</div>
+<div class="space-y-3 md:space-y-4">
+<div class="flex items-center justify-between py-2 border-b border-slate-100/50"><span class="text-xs md:text-sm font-medium text-slate-500">Leads contacted</span><span class="text-lg md:text-xl font-black text-slate-800">64</span></div>
+<div onclick="toggleReplyModal(true)" class="flex items-center justify-between py-2 border-b border-slate-100/50 cursor-pointer hover:bg-slate-50/50 rounded-lg px-2 -mx-2 transition-colors group">
+<span class="text-xs md:text-sm font-medium text-slate-500 group-hover:text-orange-500">Leads replies</span>
+<div class="flex items-center gap-2"><span class="text-lg md:text-xl font-black text-emerald-500">10</span><svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></div>
+</div>
+<div class="flex items-center justify-between py-2 border-b border-slate-100/50"><span class="text-xs md:text-sm font-medium text-emerald-600">Positive Replies</span><span class="text-lg md:text-xl font-black text-emerald-500">0</span></div>
+<div class="flex items-center justify-between py-2 border-b border-slate-100/50"><span class="text-xs md:text-sm font-medium text-rose-600">Negative Replies</span><span class="text-lg md:text-xl font-black text-rose-500">10</span></div>
+<div class="flex items-center justify-between py-2"><span class="text-xs md:text-sm font-medium text-slate-500">Reply Rate</span><span class="text-lg md:text-xl font-black text-slate-800">15.6%</span></div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+<!-- Modals -->
+<div id="leadsModal" class="modal-backdrop" onclick="if(event.target == this) toggleModal(false)">
+<div class="bg-white/90 backdrop-blur-2xl border border-white rounded-[32px] p-5 md:p-8 w-full max-w-[700px] shadow-2xl relative max-h-[90vh] overflow-y-auto scroll-container">
+<button onclick="toggleModal(false)" class="absolute top-4 right-4 md:top-6 md:right-6 text-slate-400 hover:text-slate-600 transition-colors p-2 bg-slate-100/50 rounded-full"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+<header class="mb-4 md:mb-6 pr-8"><h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">Lead Analysis</h3><p class="text-[10px] md:text-[11px] font-bold text-orange-500 uppercase tracking-widest mt-1" id="modalWeekLabel">Active Week: March 30 - Apr 05</p></header>
+<div id="leadFilterBar" class="flex items-center gap-2 mb-4 flex-wrap"></div>
+<div id="leadsModalContent" class="space-y-4"></div>
+</div>
+</div>
+<div id="replyModal" class="modal-backdrop" onclick="if(event.target == this) toggleReplyModal(false)">
+<div class="bg-white/90 backdrop-blur-2xl border border-white rounded-[32px] p-5 md:p-8 w-full max-w-[600px] shadow-2xl relative max-h-[90vh] overflow-y-auto scroll-container">
+<button onclick="toggleReplyModal(false)" class="absolute top-4 right-4 md:top-6 md:right-6 text-slate-400 hover:text-slate-600 transition-colors p-2 bg-slate-100/50 rounded-full"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+<header class="mb-4 md:mb-6 pr-8"><h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">LinkedIn Reply Log</h3><p class="text-[10px] md:text-[11px] font-bold text-orange-500 uppercase tracking-widest mt-1">Recent Message Interactions</p></header>
+<div class="space-y-3 md:space-y-4">
+<div class="bg-white/60 border border-slate-100 p-4 md:p-5 rounded-[24px] space-y-3 md:space-y-4 shadow-sm">
+<div class="flex flex-col sm:flex-row justify-between sm:items-start border-b border-slate-100 pb-3 gap-2"><div><h4 class="text-lg md:text-xl font-bold text-slate-800">Pablo Ramirez</h4><p class="text-[9px] md:text-[10px] font-black text-orange-500 uppercase mt-1">Molinos el Pais</p></div><div class="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-1 w-full sm:w-auto"><span class="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded uppercase">Reply Received</span><span class="text-[9px] font-bold text-slate-400">Apr 23, 02:49 PM</span></div></div>
+<div class="bg-orange-50/30 p-3 md:p-4 rounded-xl border border-orange-100/50"><p class="text-xs md:text-sm text-slate-500 font-medium italic">Message preview unavailable...</p></div>
+</div>
+<div class="bg-white/60 border border-slate-100 p-4 md:p-5 rounded-[24px] space-y-3 md:space-y-4 shadow-sm">
+<div class="flex flex-col sm:flex-row justify-between sm:items-start border-b border-slate-100 pb-3 gap-2"><div><h4 class="text-lg md:text-xl font-bold text-slate-800">Sangller</h4><p class="text-[9px] md:text-[10px] font-black text-orange-500 uppercase mt-1">Unknown</p></div><div class="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-1 w-full sm:w-auto"><span class="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded uppercase">Positive Reply</span><span class="text-[9px] font-bold text-slate-400">Apr 13, 09:01 PM</span></div></div>
+<div class="bg-emerald-50/40 p-3 md:p-4 rounded-xl border border-emerald-100/50"><p class="text-xs md:text-sm text-emerald-800 font-medium italic">"I want to know more"</p></div>
+</div>
+<div class="bg-white/60 border border-slate-100 p-4 md:p-5 rounded-[24px] space-y-3 md:space-y-4 shadow-sm">
+<div class="flex flex-col sm:flex-row justify-between sm:items-start border-b border-slate-100 pb-3 gap-2"><div><h4 class="text-lg md:text-xl font-bold text-slate-800">Michael Merida</h4><p class="text-[9px] md:text-[10px] font-black text-orange-500 uppercase mt-1">Eternal Waters</p></div><span class="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded uppercase self-start">Reply Received</span></div>
+<div class="bg-orange-50/30 p-3 md:p-4 rounded-xl border border-orange-100/50"><p class="text-xs md:text-sm text-slate-700 font-medium italic">"No thank you"</p></div>
+</div>
+<div class="bg-white/60 border border-slate-100 p-4 md:p-5 rounded-[24px] space-y-3 md:space-y-4 shadow-sm">
+<div class="flex flex-col sm:flex-row justify-between sm:items-start border-b border-slate-100 pb-3 gap-2"><div><h4 class="text-lg md:text-xl font-bold text-slate-800">Rick Johnston</h4><p class="text-[9px] md:text-[10px] font-black text-orange-500 uppercase mt-1">Full Harvest</p></div><span class="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded uppercase self-start">Reply Received</span></div>
+<div class="bg-orange-50/30 p-3 md:p-4 rounded-xl border border-orange-100/50"><p class="text-xs md:text-sm text-slate-700 font-medium italic">"Claudia - I am no longer w Full Harvest."</p></div>
+</div>
+</div>
+</div>
+</div>
+<div id="leadDetailsModal" class="modal-backdrop" onclick="if(event.target == this) toggleLeadDetailsModal(false)">
+<div class="bg-white/90 backdrop-blur-2xl border border-white rounded-[32px] p-5 md:p-8 w-full max-w-[600px] shadow-2xl relative max-h-[90vh] overflow-y-auto scroll-container">
+<button onclick="toggleLeadDetailsModal(false)" class="absolute top-4 right-4 md:top-6 md:right-6 text-slate-400 hover:text-slate-600 transition-colors p-2 bg-slate-100/50 rounded-full"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+<header class="mb-4 md:mb-6 pr-8"><h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight" id="detailName">Lead Name</h3><p class="text-[10px] md:text-[11px] font-bold text-orange-500 uppercase tracking-widest mt-1" id="detailBusiness">Business Name</p></header>
+<div id="leadSpecificDetails" class="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4"></div>
+</div>
+</div>
+<div id="funnelModal" class="modal-backdrop" onclick="if(event.target == this) toggleFunnelModal(false)">
+<div class="bg-white/90 backdrop-blur-2xl border border-white rounded-[32px] p-5 md:p-8 w-full max-w-[600px] shadow-2xl relative max-h-[90vh] overflow-y-auto scroll-container">
+<button onclick="toggleFunnelModal(false)" class="absolute top-4 right-4 md:top-6 md:right-6 text-slate-400 hover:text-slate-600 transition-colors p-2 bg-slate-100/50 rounded-full"><svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+<header class="mb-4 md:mb-6 pr-8"><h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight" id="funnelModalTitle">Meetings Booked</h3><p class="text-[10px] md:text-[11px] font-bold text-orange-500 uppercase tracking-widest mt-1" id="funnelModalSubtitle">All Time</p></header>
+<div id="funnelModalContent" class="space-y-3"></div>
+</div>
+</div>
+<script>
+function toggleFunnelModal(show) { document.getElementById('funnelModal').style.display = show ? 'flex' : 'none'; }
+function showFunnelLeads(type) {
+    const allLeads = [];
+    Object.values(leadsByWeek).forEach(weekLeads => { weekLeads.forEach(l => { if(type === 'booked' && l.meetingBooked) allLeads.push(l); if(type === 'attended' && l.meetingAttended) allLeads.push(l); }); });
+    const title = type === 'booked' ? 'Meetings Booked' : 'Meetings Attended';
+    const accentColor = type === 'booked' ? 'orange' : 'emerald';
+    document.getElementById('funnelModalTitle').innerText = title;
+    document.getElementById('funnelModalSubtitle').innerText = allLeads.length + ' lead' + (allLeads.length !== 1 ? 's' : '') + ' — All Time';
+    document.getElementById('funnelModalSubtitle').className = 'text-[10px] md:text-[11px] font-bold text-'+accentColor+'-500 uppercase tracking-widest mt-1';
+    const container = document.getElementById('funnelModalContent');
+    container.innerHTML = '';
+    allLeads.forEach(lead => {
+        const attendedBadge = lead.meetingAttended ? '<span class="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded uppercase">Attended</span>' : '<span class="text-[8px] font-black text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded uppercase">Booked</span>';
+        container.innerHTML += '<div class="bg-white/60 border border-slate-100 p-4 rounded-[20px] shadow-sm"><div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-2"><div><h4 class="text-base md:text-lg font-bold text-slate-800">'+lead.name+'</h4><p class="text-[9px] font-black text-orange-500 uppercase mt-0.5">'+lead.business+'</p></div>'+attendedBadge+'</div><div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] md:text-[11px] font-semibold text-slate-600"><div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Email</p><p class="truncate">'+lead.email+'</p></div><div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Phone</p><p>'+lead.phone+'</p></div></div></div>';
+    });
+    toggleFunnelModal(true);
+}
+
+let summaryChart = null;
+let currentViewData = null;
+let leadsByWeek = {};
+let weeklyData = {};
+let allWeeksInOrder = [];
+
+function switchTab(tabId) {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + tabId).classList.add('active');
+    document.querySelectorAll('.sidebar-item').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('btn-' + tabId).classList.add('active');
+    if (tabId === 'summary') setTimeout(() => { if(currentViewData) renderSummaryChart(currentViewData); }, 100);
+    if (tabId === 'emails') switchCampaign('enterpryze');
+    if (window.innerWidth < 768) { const nav = document.getElementById('sidebarNav'); if (nav && !nav.classList.contains('hidden')) { nav.classList.add('hidden'); nav.classList.remove('flex'); } }
+}
+function toggleMobileMenu() { const nav = document.getElementById('sidebarNav'); if (nav) { if (nav.classList.contains('hidden')) { nav.classList.remove('hidden'); nav.classList.add('flex'); } else { nav.classList.add('hidden'); nav.classList.remove('flex'); } } }
+function switchCampaign(campaignId) { document.querySelectorAll('.campaign-content').forEach(c => c.classList.remove('active')); document.getElementById('campaign-' + campaignId).classList.add('active'); document.querySelectorAll('.campaign-pill').forEach(p => p.classList.remove('active')); document.getElementById('pill-' + campaignId).classList.add('active'); }
+let currentLeadFilter = 'all';
+function toggleModal(show) { if(show) { currentLeadFilter = 'all'; populateLeadsModal(); } document.getElementById('leadsModal').style.display = show ? 'flex' : 'none'; }
+function setLeadFilter(filter) { currentLeadFilter = filter; populateLeadsModal(); }
+function toggleReplyModal(show) { document.getElementById('replyModal').style.display = show ? 'flex' : 'none'; }
+function toggleLeadDetailsModal(show) { document.getElementById('leadDetailsModal').style.display = show ? 'flex' : 'none'; }
+
+function openLeadDetails(leadIndex) {
+    if (!currentViewData || !currentViewData.leads) return;
+    const lead = currentViewData.leads[leadIndex];
+    if (!lead || !lead.details) return;
+    document.getElementById('detailName').innerText = lead.name;
+    document.getElementById('detailBusiness').innerText = lead.business;
+    let extraDetailsHTML = '';
+    if (lead.details.companyDesc) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Company Description</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.companyDesc+'</p></div>'; }
+    if (lead.details.challenge) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Operational Challenge</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.challenge+'</p></div>'; }
+    if (lead.details.software) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Current Software</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.software+'</p></div>'; }
+    if (lead.details.role) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Role</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.role+'</p></div>'; }
+    const container = document.getElementById('leadSpecificDetails');
+    container.innerHTML = '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Type of Food</p><p class="text-xs md:text-sm font-bold text-slate-800">'+(lead.details.foodType||'N/A')+'</p></div><div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Website</p>'+(lead.details.website?'<a href="'+lead.details.website+'" target="_blank" class="text-xs md:text-sm font-bold text-orange-500 hover:underline truncate block">'+lead.details.website+'</a>':'<p class="text-xs md:text-sm font-bold text-slate-800">N/A</p>')+'</div><div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Number of Employees</p><p class="text-xs md:text-sm font-bold text-slate-800">'+(lead.details.employees||'N/A')+'</p></div><div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Budget</p><p class="text-xs md:text-sm font-bold text-slate-800">'+(lead.details.budget||'N/A')+'</p></div><div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Timeline</p><p class="text-xs md:text-sm font-bold text-slate-800">'+(lead.details.timeline||'N/A')+'</p></div>'+extraDetailsHTML;
+    toggleLeadDetailsModal(true);
+}
+
+function populateLeadsModal() {
+    const container = document.getElementById('leadsModalContent');
+    const filterBar = document.getElementById('leadFilterBar');
+    container.innerHTML = '';
+    const allLeads = currentViewData ? currentViewData.leads : [];
+    const allCount = allLeads.length;
+    const fdaCount = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FDA').length;
+    const foodCount = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FOOD MANUFACTURER').length;
+    const generalCount = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() !== 'FDA' && l.pipeline.toUpperCase() !== 'FOOD MANUFACTURER').length;
+    // Build filter pills
+    const pillBase = 'px-3 py-1.5 rounded-full text-[10px] md:text-[11px] font-black uppercase tracking-wider cursor-pointer transition-all border ';
+    const pillActive = 'bg-slate-800 text-white border-slate-800 shadow-md ';
+    const pillInactive = 'bg-white/60 text-slate-500 border-slate-200 hover:bg-slate-100 ';
+    let filterHTML = '';
+    filterHTML += '<button onclick="setLeadFilter(\'all\')" class="'+pillBase+(currentLeadFilter==='all'?pillActive:pillInactive)+'">All <span class="ml-1 opacity-70">'+allCount+'</span></button>';
+    if(fdaCount > 0) filterHTML += '<button onclick="setLeadFilter(\'fda\')" class="'+pillBase+(currentLeadFilter==='fda'?'bg-red-500 text-white border-red-500 shadow-md ':pillInactive)+'">FDA <span class="ml-1 opacity-70">'+fdaCount+'</span></button>';
+    if(foodCount > 0) filterHTML += '<button onclick="setLeadFilter(\'food\')" class="'+pillBase+(currentLeadFilter==='food'?'bg-orange-500 text-white border-orange-500 shadow-md ':pillInactive)+'">Food Man <span class="ml-1 opacity-70">'+foodCount+'</span></button>';
+    if(generalCount > 0) filterHTML += '<button onclick="setLeadFilter(\'general\')" class="'+pillBase+(currentLeadFilter==='general'?'bg-blue-500 text-white border-blue-500 shadow-md ':pillInactive)+'">General <span class="ml-1 opacity-70">'+generalCount+'</span></button>';
+    filterBar.innerHTML = filterHTML;
+    // Filter leads
+    let leads = allLeads;
+    if(currentLeadFilter === 'fda') leads = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FDA');
+    else if(currentLeadFilter === 'food') leads = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FOOD MANUFACTURER');
+    else if(currentLeadFilter === 'general') leads = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() !== 'FDA' && l.pipeline.toUpperCase() !== 'FOOD MANUFACTURER');
+    if (leads.length === 0) { container.innerHTML = '<p class="text-slate-400 text-center italic py-10">No leads for this filter.</p>'; return; }
+    leads.forEach((lead) => {
+        const origIndex = allLeads.indexOf(lead);
+        const hasDetails = !!lead.details;
+        let cardClasses = "p-4 md:p-5 rounded-[24px] space-y-3 md:space-y-4 shadow-sm transition-all ";
+        if (lead.status === 'ongoing') { cardClasses += "bg-emerald-50/50 border-2 border-emerald-400 "; } else { cardClasses += "bg-white/60 border border-slate-100 "; }
+        if (hasDetails) { cardClasses += "cursor-pointer hover:bg-white shadow-md transform hover:-translate-y-0.5 "; if (lead.status !== 'ongoing') { cardClasses += "hover:border-orange-200 "; } }
+        const clickAttr = hasDetails ? 'onclick="openLeadDetails('+origIndex+')"' : '';
+        const badge = hasDetails ? '<span class="ml-2 text-[8px] font-black text-white bg-orange-500 px-2 py-0.5 rounded shadow-sm whitespace-nowrap">VIEW DETAILS</span>' : '';
+        const statusBadge = lead.status === 'ongoing' ? '<span class="ml-2 text-[8px] md:text-[9px] font-black text-emerald-600 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded uppercase whitespace-nowrap">Ongoing</span>' : '';
+        let modalPipelineClass = "text-orange-600 bg-orange-50";
+        if(lead.pipeline && lead.pipeline.toUpperCase() === 'FDA') { modalPipelineClass = "text-red-600 bg-red-50"; }
+        container.innerHTML += '<div class="'+cardClasses+'" '+clickAttr+'><div class="flex flex-col sm:flex-row justify-between sm:items-center border-b '+(lead.status==='ongoing'?'border-emerald-200':'border-slate-100')+' pb-3 gap-2"><div><div class="flex flex-wrap items-center gap-1 md:gap-2"><h4 class="text-lg md:text-xl font-bold text-slate-800">'+lead.name+'</h4>'+badge+statusBadge+'</div><div class="flex flex-wrap items-center gap-2 mt-2 sm:mt-1"><span class="text-[8px] md:text-[9px] font-black text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded uppercase">'+lead.source+'</span><span class="text-[8px] md:text-[9px] font-black '+modalPipelineClass+' px-2 py-0.5 rounded uppercase">'+lead.pipeline+'</span></div></div><span class="text-[8px] md:text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded self-start sm:self-auto shrink-0">'+lead.date+'</span></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 text-[10px] md:text-[11px] font-semibold text-slate-600 pt-1"><div class="space-y-1 overflow-hidden"><p class="text-slate-400 uppercase text-[8px] md:text-[9px]">Email & Business</p><p class="truncate">'+lead.email+'</p><p class="text-orange-500 truncate">'+lead.business+'</p></div><div class="space-y-1"><p class="text-slate-400 uppercase text-[8px] md:text-[9px]">Phone</p><p>'+lead.phone+'</p></div></div></div>';
+    });
+}
+function getKeysForRange(rangeValue) {
+    if (allWeeksInOrder.includes(rangeValue)) return [rangeValue];
+    const reversed = [...allWeeksInOrder].reverse();
+    if (rangeValue === '1-week') return reversed.slice(0, 1);
+    if (rangeValue === '2-weeks') return reversed.slice(0, 2);
+    if (rangeValue === '1-month') return reversed.slice(0, 4);
+    if (rangeValue === '3-months') return reversed.slice(0, 12);
+    if (rangeValue === '1-year' || rangeValue === 'all-time') return reversed;
+    return [];
+}
+function parsePercent(str) { return parseFloat(str.replace('%', '')) || 0; }
+
+
+
+function getAggregatedData(keys) {
+    let agg = { outreachTotal:0, pipelineCount:0, meetingsBooked:0, meetingsAttended:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], chartFdaValues:[], chartFoodValues:[], leads:[], dateRange:'' };
+    let chronKeys = [...keys].reverse();
+    chronKeys.forEach(key => {
+        let data = weeklyData[key]; if (!data) return;
+        agg.outreachTotal += data.outreachTotal;
+        agg.pipelineCount += data.pipelineCount;
+
+        agg.entSent += data.entSent; agg.entOpenRaw += (parsePercent(data.entOpen)/100)*data.entSent; agg.entClickRaw += (parsePercent(data.entClick)/100)*data.entSent; agg.entReplyRaw += (parsePercent(data.entReply)/100)*data.entSent;
+        agg.foodSent += data.foodSent; agg.foodOpenRaw += (parsePercent(data.foodOpen)/100)*data.foodSent; agg.foodClickRaw += (parsePercent(data.foodClick)/100)*data.foodSent; agg.foodReplyRaw += (parsePercent(data.foodReply)/100)*data.foodSent;
+        agg.erpSent += data.erpSent; agg.erpOpenRaw += (parsePercent(data.erpOpen)/100)*data.erpSent; agg.erpClickRaw += (parsePercent(data.erpClick)/100)*data.erpSent; agg.erpReplyRaw += (parsePercent(data.erpReply)/100)*data.erpSent;
+        // Build per-day FDA/Food counts from leads
+        const weekLeads = leadsByWeek[key] || [];
+        if (keys.length > 2) {
+            agg.chartLabels.push(data.dateRange.split(' - ')[0]);
+            const fdaTotal = weekLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FDA').length;
+            const foodTotal = weekLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() !== 'FDA').length;
+            agg.chartFdaValues.push(fdaTotal);
+            agg.chartFoodValues.push(foodTotal);
+            agg.chartValues.push(data.chartValues.reduce((a,b)=>a+b,0));
+        } else {
+            agg.chartLabels.push(...data.chartLabels);
+            agg.chartValues.push(...data.chartValues);
+            // Count leads per day by pipeline
+            data.chartLabels.forEach(label => {
+                let fdaDay = 0, foodDay = 0;
+                weekLeads.forEach(l => {
+                    const leadLabel = l.date.replace(/^(\w{3})\s+(\d{1,2})$/, (m, mon, day) => mon + ' ' + day.padStart(2, '0'));
+                    if (leadLabel === label) {
+                        if (l.pipeline && l.pipeline.toUpperCase() === 'FDA') fdaDay++;
+                        else foodDay++;
+                    }
+                });
+                agg.chartFdaValues.push(fdaDay);
+                agg.chartFoodValues.push(foodDay);
+            });
+        }
+        if (leadsByWeek[key]) { agg.leads.push(...leadsByWeek[key]); leadsByWeek[key].forEach(l => { if(l.meetingBooked) agg.meetingsBooked++; if(l.meetingAttended) agg.meetingsAttended++; }); }
+    });
+    if (chronKeys.length > 0) { let s = weeklyData[chronKeys[0]]; let e = weeklyData[chronKeys[chronKeys.length-1]]; agg.dateRange = chronKeys.length===1 ? s.dateRange : s.dateRange.split(' - ')[0]+' - '+(e.dateRange.split(' - ')[1]||e.dateRange); }
+    const fmt = (raw, sent) => sent > 0 ? (raw/sent*100).toFixed(1)+'%' : '0%';
+    agg.entOpen=fmt(agg.entOpenRaw,agg.entSent); agg.entClick=fmt(agg.entClickRaw,agg.entSent); agg.entReply=fmt(agg.entReplyRaw,agg.entSent);
+    agg.foodOpen=fmt(agg.foodOpenRaw,agg.foodSent); agg.foodClick=fmt(agg.foodClickRaw,agg.foodSent); agg.foodReply=fmt(agg.foodReplyRaw,agg.foodSent);
+    agg.erpOpen=fmt(agg.erpOpenRaw,agg.erpSent); agg.erpClick=fmt(agg.erpClickRaw,agg.erpSent); agg.erpReply=fmt(agg.erpReplyRaw,agg.erpSent);
+    agg.outreachBreakdown = 'Enterpryze: '+agg.entSent+' | Food: '+agg.foodSent+' | ERP: '+agg.erpSent;
+    agg.foodLabel = "Email Sent";
+
+    return agg;
+}
+
+function handleWeekChange(rangeValue) {
+    const keys = getKeysForRange(rangeValue); if (keys.length === 0) return;
+    currentViewData = getAggregatedData(keys);
+    const data = currentViewData;
+    document.getElementById('outreachSentCount').innerText = data.outreachTotal+' Sent';
+    document.getElementById('outreachBreakdown').innerText = data.outreachBreakdown;
+    document.getElementById('pipelineLeadCount').innerText = data.pipelineCount+' Lead'+(data.pipelineCount!==1?'s':'');
+    document.getElementById('chartDateContext').innerText = 'Tracking arrival dates for '+data.dateRange;
+    document.getElementById('modalWeekLabel').innerText = 'Active Range: '+data.dateRange;
+    document.getElementById('entSentCount').innerText = data.entSent;
+    document.getElementById('entOpenRate').innerText = data.entOpen;
+    document.getElementById('entClickRate').innerText = data.entClick;
+    document.getElementById('entReplyRate').innerText = data.entReply;
+    document.getElementById('foodLabel').innerText = data.foodLabel;
+    document.getElementById('foodSentCount').innerText = data.foodSent;
+    document.getElementById('foodOpenRate').innerText = data.foodOpen;
+    document.getElementById('foodClickRate').innerText = data.foodClick;
+    document.getElementById('foodReplyRate').innerText = data.foodReply;
+    document.getElementById('erpSentCount').innerText = data.erpSent;
+    document.getElementById('erpOpenRate').innerText = data.erpOpen;
+    document.getElementById('erpClickRate').innerText = data.erpClick;
+    document.getElementById('erpReplyRate').innerText = data.erpReply;
+
+    // Update funnel metrics (always all-time)
+    let totalLeads = 0, booked = 0, attended = 0;
+    Object.values(leadsByWeek).forEach(weekLeads => { weekLeads.forEach(l => { totalLeads++; if(l.meetingBooked) booked++; if(l.meetingAttended) attended++; }); });
+    const bookedPct = totalLeads > 0 ? (booked/totalLeads*100).toFixed(1) : '0';
+    const attendedPct = booked > 0 ? (attended/booked*100).toFixed(1) : '0';
+    document.getElementById('funnelTotalLeads').innerText = totalLeads;
+    document.getElementById('funnelBooked').innerText = booked;
+    document.getElementById('funnelBookedPct').innerText = bookedPct+'% of leads';
+    document.getElementById('funnelAttended').innerText = attended;
+    document.getElementById('funnelAttendedPct').innerText = attendedPct+'% of booked';
+    document.getElementById('funnelLeadsNum').innerText = totalLeads;
+    document.getElementById('funnelBookedNum').innerText = booked;
+    document.getElementById('funnelAttendedNum').innerText = attended;
+    document.getElementById('funnelBookedBar').style.width = (totalLeads > 0 ? (booked/totalLeads*100) : 0)+'%';
+    document.getElementById('funnelAttendedBar').style.width = (totalLeads > 0 ? (attended/totalLeads*100) : 0)+'%';
+
+    if(document.getElementById('tab-summary').classList.contains('active')) { renderSummaryChart(data); }
+    if(document.getElementById('leadsModal').style.display === 'flex') { populateLeadsModal(); }
+}
+
+function renderSummaryChart(data) {
+    if (summaryChart) summaryChart.destroy();
+    const ctx = document.getElementById('leadsSummaryChart').getContext('2d');
+    const hasFda = data.chartFdaValues && data.chartFdaValues.some(v => v > 0);
+    const hasFood = data.chartFoodValues && data.chartFoodValues.some(v => v > 0);
+    let datasets = [];
+    if (hasFda || hasFood) {
+        datasets.push({ label: 'Food Man', data: data.chartFoodValues, backgroundColor: '#f97316', borderRadius: 8, barThickness: 16 });
+        datasets.push({ label: 'FDA', data: data.chartFdaValues, backgroundColor: '#ef4444', borderRadius: 8, barThickness: 16 });
+    } else {
+        datasets.push({ label: 'Leads', data: data.chartValues, backgroundColor: '#f97316', borderRadius: 8, barThickness: 16 });
+    }
+    summaryChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: data.chartLabels, datasets: datasets },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: hasFda || hasFood, position: 'top', labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 12, font: { size: 10, weight: 'bold' }, color: '#64748b' } }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.dataset.label+': '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { stacked: true, grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
+    });
+}
+const GHL_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function ghlPad2(n) { return String(n).padStart(2, '0'); }
+function ghlWeekStart(iso) {
+    const d = new Date(iso);
+    const day = d.getUTCDay();
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day));
+}
+function ghlWeekKey(iso) {
+    const s = ghlWeekStart(iso);
+    return GHL_MONTHS[s.getUTCMonth()].toLowerCase() + '-' + ghlPad2(s.getUTCDate());
+}
+function ghlWeekRangeLabel(s) {
+    const e = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate() + 6));
+    const startStr = GHL_MONTHS[s.getUTCMonth()] + ' ' + ghlPad2(s.getUTCDate());
+    const endStr = (s.getUTCMonth() === e.getUTCMonth()) ? ghlPad2(e.getUTCDate()) : GHL_MONTHS[e.getUTCMonth()] + ' ' + ghlPad2(e.getUTCDate());
+    return startStr + ' - ' + endStr;
+}
+
+function buildFromLeads(leads) {
+    leadsByWeek = {};
+    weeklyData = {};
+    allWeeksInOrder = [];
+    const startMap = {};
+    leads.forEach(l => {
+        if (!l.dateISO) l.dateISO = new Date().toISOString();
+        const s = ghlWeekStart(l.dateISO);
+        const key = ghlWeekKey(l.dateISO);
+        startMap[key] = s;
+        (leadsByWeek[key] = leadsByWeek[key] || []).push(l);
+    });
+    Object.keys(leadsByWeek).forEach(key => {
+        const s = startMap[key];
+        const wl = leadsByWeek[key];
+        const labels = [], values = [];
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate() + i));
+            labels.push(GHL_MONTHS[d.getUTCMonth()] + ' ' + ghlPad2(d.getUTCDate()));
+            values.push(wl.filter(l => {
+                const ld = new Date(l.dateISO);
+                return ld.getUTCFullYear() === d.getUTCFullYear() && ld.getUTCMonth() === d.getUTCMonth() && ld.getUTCDate() === d.getUTCDate();
+            }).length);
+        }
+        weeklyData[key] = {
+            outreachTotal: 0, outreachBreakdown: 'Enterpryze: 0 | Food: 0 | ERP: 0', pipelineCount: wl.length,
+            dateRange: ghlWeekRangeLabel(s), chartLabels: labels, chartValues: values,
+            entSent: 0, entOpen: '0%', entClick: '0%', entReply: '0%',
+            foodSent: 0, foodOpen: '0%', foodClick: '0%', foodReply: '0%', foodLabel: 'Email Sent',
+            erpSent: 0, erpOpen: '0%', erpClick: '0%', erpReply: '0%'
+        };
+    });
+    allWeeksInOrder = Object.keys(leadsByWeek).sort((a, b) => startMap[a] - startMap[b]);
+}
+
+function rebuildWeekSelectOptions() {
+    const group = document.getElementById('specificWeeksGroup');
+    if (!group) return;
+    const current = document.getElementById('dateRangeSelect').value;
+    group.innerHTML = '';
+    [...allWeeksInOrder].reverse().forEach((k, i) => {
+        const o = document.createElement('option');
+        o.value = k;
+        o.textContent = weeklyData[k] ? weeklyData[k].dateRange : k;
+        if (i === 0 && !allWeeksInOrder.includes(current)) o.selected = true;
+        else if (k === current) o.selected = true;
+        group.appendChild(o);
+    });
+}
+
+function showGhlBanner(msg) {
+    const b = document.getElementById('ghlBanner');
+    b.textContent = msg;
+    b.classList.remove('hidden');
+}
+function hideGhlBanner() { document.getElementById('ghlBanner').classList.add('hidden'); }
+function setSyncStatus(text) {
+    document.getElementById('syncStatus').innerHTML =
+        '<span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span> ' + text;
+}
+
+async function refreshLeads() {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.classList.add('opacity-60');
+    setSyncStatus('Loading…');
+    try {
+        const r = await fetch('/api/leads', { cache: 'no-store' });
+        const j = await r.json();
+        if (j.configured === false) {
+            showGhlBanner('Connect KV/Redis in Vercel, then click Import all from GHL (needs GHL_API_KEY + GHL_LOCATION_ID).');
+            setSyncStatus('Storage offline');
+            buildFromLeads([]);
+        } else {
+            hideGhlBanner();
+            buildFromLeads(j.leads || []);
+            rebuildWeekSelectOptions();
+            const now = new Date();
+            setSyncStatus((j.count || 0) + ' leads · ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        }
+        const sel = document.getElementById('dateRangeSelect');
+        const latest = allWeeksInOrder[allWeeksInOrder.length - 1];
+        const range = sel.value && (allWeeksInOrder.includes(sel.value) || ['all-time','1-year','3-months','1-month','2-weeks','1-week'].includes(sel.value)) ? sel.value : (latest || 'all-time');
+        handleWeekChange(range);
+    } catch (e) {
+        showGhlBanner('Could not load /api/leads: ' + e.message);
+        setSyncStatus('Failed');
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-60');
+    }
+}
+
+async function importFromGhl() {
+    const btn = document.getElementById('importBtn');
+    btn.disabled = true;
+    btn.classList.add('opacity-60');
+    setSyncStatus('Importing from GHL API…');
+    showGhlBanner('Fetching all contacts tagged meta / meta fda from GoHighLevel…');
+    try {
+        const r = await fetch('/api/sync', { method: 'POST' });
+        const j = await r.json();
+        if (!j.ok) {
+            showGhlBanner(j.error || 'Import failed');
+            setSyncStatus('Import failed');
+            return;
+        }
+        hideGhlBanner();
+        showGhlBanner('Imported ' + j.imported + ' contacts (' + j.stored + ' stored). Weeks are built from each lead dateAdded.');
+        setSyncStatus('Imported ' + j.imported);
+        await refreshLeads();
+    } catch (e) {
+        showGhlBanner('Import error: ' + e.message);
+        setSyncStatus('Import failed');
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-60');
+    }
+}
+
+window.onload = () => {
+    refreshLeads();
+    setInterval(refreshLeads, 60000);
+};
+</script>
 </body>
 </html>
