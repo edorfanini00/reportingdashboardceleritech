@@ -44,24 +44,53 @@ async function searchPage({ page, pageLimit, filters, searchAfter }) {
   return { batch: Array.isArray(batch) ? batch : [], total };
 }
 
-// Fetch every contact in the location using searchAfter cursor pagination.
+// Page through a single tag filter (results are small, so page-based is fine).
+async function searchByTagContains(value, pageLimit = 100, maxPages = 50) {
+  const all = [];
+  let page = 1;
+  for (let guard = 0; guard < maxPages; guard++) {
+    const { batch } = await searchPage({
+      page,
+      pageLimit,
+      filters: [{ field: 'tags', operator: 'contains', value }],
+    });
+    all.push(...batch);
+    if (batch.length < pageLimit) break;
+    page += 1;
+  }
+  return all;
+}
+
+// Fetch only contacts whose tags contain "meta" or "fda" (deduped).
+// Far cheaper than scanning every contact in large accounts.
+async function fetchQualifyingContacts() {
+  const byId = new Map();
+  for (const value of ['meta', 'fda']) {
+    const contacts = await searchByTagContains(value);
+    for (const c of contacts) {
+      const id = c.id || c.contactId || `${c.email || ''}-${c.phone || ''}`;
+      byId.set(id, c);
+    }
+  }
+  const contacts = [...byId.values()];
+  return { contacts, total: contacts.length };
+}
+
+// Full scan (used only for diagnostics / debug).
 async function fetchAllContacts(pageLimit = 100, maxPages = 500) {
   const all = [];
   let searchAfter = null;
   let total = null;
-
   for (let guard = 0; guard < maxPages; guard++) {
     const res = await searchPage(searchAfter ? { pageLimit, searchAfter } : { page: 1, pageLimit });
     if (total == null) total = res.total;
     if (!res.batch.length) break;
     all.push(...res.batch);
-
     const last = res.batch[res.batch.length - 1];
     const cursor = last && last.searchAfter;
     if (!cursor || res.batch.length < pageLimit) break;
     searchAfter = cursor;
   }
-
   return { contacts: all, total };
 }
 
@@ -78,4 +107,4 @@ function collectTagSamples(contacts) {
   return counts;
 }
 
-module.exports = { ghlConfigured, fetchAllContacts, collectTagSamples, searchPage };
+module.exports = { ghlConfigured, fetchQualifyingContacts, fetchAllContacts, collectTagSamples, searchPage };

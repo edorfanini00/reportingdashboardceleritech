@@ -1,7 +1,7 @@
 // Bulk import: pulls ALL GHL contacts, keeps those tagged meta / meta fda.
 const { transformContact, hasQualifyingTag, normalizeTags } = require('./_lib/transform');
 const { saveLead, isConfigured, getAllLeads } = require('./_lib/store');
-const { ghlConfigured, fetchAllContacts, collectTagSamples } = require('./_lib/ghl-client');
+const { ghlConfigured, fetchQualifyingContacts, collectTagSamples } = require('./_lib/ghl-client');
 
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -36,7 +36,7 @@ module.exports = async function handler(req, res) {
   const debug = req.query && (req.query.debug === '1' || req.query.debug === 'true');
 
   try {
-    const { contacts, total } = await fetchAllContacts();
+    const { contacts, total } = await fetchQualifyingContacts();
     let imported = 0;
     let skipped = 0;
 
