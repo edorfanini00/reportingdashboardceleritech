@@ -353,20 +353,34 @@ function setLeadFilter(filter) { currentLeadFilter = filter; populateLeadsModal(
 function toggleReplyModal(show) { document.getElementById('replyModal').style.display = show ? 'flex' : 'none'; }
 function toggleLeadDetailsModal(show) { document.getElementById('leadDetailsModal').style.display = show ? 'flex' : 'none'; }
 
+function ghlEscape(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function ghlIsUrl(v){ return /^https?:\/\//i.test(String(v).trim()); }
+function ghlDetailCard(label, value, full){
+    var span = full ? 'col-span-1 sm:col-span-2' : '';
+    var val = ghlIsUrl(value)
+        ? '<a href="'+ghlEscape(value)+'" target="_blank" class="text-xs md:text-sm font-bold text-orange-500 hover:underline break-words block">'+ghlEscape(value)+'</a>'
+        : '<p class="text-xs md:text-sm font-bold text-slate-800 break-words">'+ghlEscape(value)+'</p>';
+    return '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl '+span+'"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">'+ghlEscape(label)+'</p>'+val+'</div>';
+}
 function openLeadDetails(leadIndex) {
     if (!currentViewData || !currentViewData.leads) return;
     const lead = currentViewData.leads[leadIndex];
-    if (!lead || !lead.details) return;
+    if (!lead || (!lead.fields && !lead.details)) return;
     document.getElementById('detailName').innerText = lead.name;
     document.getElementById('detailBusiness').innerText = lead.business;
-    let extraDetailsHTML = '';
-    if (lead.details.companyDesc) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Company Description</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.companyDesc+'</p></div>'; }
-    if (lead.details.challenge) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Operational Challenge</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.challenge+'</p></div>'; }
-    if (lead.details.software) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Current Software</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.software+'</p></div>'; }
-    if (lead.details.role) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Role</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.role+'</p></div>'; }
-    if (lead.details.city) { extraDetailsHTML += '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">City</p><p class="text-xs md:text-sm font-bold text-slate-800">'+lead.details.city+'</p></div>'; }
     const container = document.getElementById('leadSpecificDetails');
-    container.innerHTML = '<div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Type of Food</p><p class="text-xs md:text-sm font-bold text-slate-800">'+(lead.details.foodType||'N/A')+'</p></div><div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Website</p>'+(lead.details.website?'<a href="'+lead.details.website+'" target="_blank" class="text-xs md:text-sm font-bold text-orange-500 hover:underline truncate block">'+lead.details.website+'</a>':'<p class="text-xs md:text-sm font-bold text-slate-800">N/A</p>')+'</div><div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Number of Employees</p><p class="text-xs md:text-sm font-bold text-slate-800">'+(lead.details.employees||'N/A')+'</p></div><div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Budget</p><p class="text-xs md:text-sm font-bold text-slate-800">'+(lead.details.budget||'N/A')+'</p></div><div class="bg-slate-50 border border-slate-100 p-3 md:p-4 rounded-xl col-span-1 sm:col-span-2"><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Timeline</p><p class="text-xs md:text-sm font-bold text-slate-800">'+(lead.details.timeline||'N/A')+'</p></div>'+extraDetailsHTML;
+    let html = '';
+    if (lead.fields && Object.keys(lead.fields).length) {
+        for (const label of Object.keys(lead.fields)) {
+            const value = lead.fields[label];
+            html += ghlDetailCard(label, value, String(value).length > 40);
+        }
+    } else if (lead.details) {
+        const d = lead.details;
+        const rows = [['Type of Food', d.foodType, false],['Website', d.website, false],['Number of Employees', d.employees, false],['Budget', d.budget, false],['Timeline', d.timeline, true],['Company Description', d.companyDesc, true],['Operational Challenge', d.challenge, true],['Current Software', d.software, true],['Role', d.role, true],['City', d.city, true]];
+        for (const r of rows) { if (r[1]) html += ghlDetailCard(r[0], r[1], r[2]); }
+    }
+    container.innerHTML = html || '<p class="text-slate-400 italic col-span-2">No form responses captured.</p>';
     toggleLeadDetailsModal(true);
 }
 
@@ -397,7 +411,7 @@ function populateLeadsModal() {
     if (leads.length === 0) { container.innerHTML = '<p class="text-slate-400 text-center italic py-10">No leads for this filter.</p>'; return; }
     leads.forEach((lead) => {
         const origIndex = allLeads.indexOf(lead);
-        const hasDetails = !!lead.details;
+        const hasDetails = !!(lead.details || lead.fields);
         let cardClasses = "p-4 md:p-5 rounded-[24px] space-y-3 md:space-y-4 shadow-sm transition-all ";
         if (lead.status === 'ongoing') { cardClasses += "bg-emerald-50/50 border-2 border-emerald-400 "; } else { cardClasses += "bg-white/60 border border-slate-100 "; }
         if (hasDetails) { cardClasses += "cursor-pointer hover:bg-white shadow-md transform hover:-translate-y-0.5 "; if (lead.status !== 'ongoing') { cardClasses += "hover:border-orange-200 "; } }

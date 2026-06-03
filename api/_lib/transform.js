@@ -101,6 +101,45 @@ function extractDetails(bag) {
   return details;
 }
 
+// Internal/standard contact keys we never want to show as a "form response".
+const NON_FORM_KEYS = new Set([
+  'id', 'contactid', 'contact_id', 'locationid', 'businessid', 'assignedto',
+  'firstname', 'lastname', 'firstnamelowercase', 'lastnamelowercase', 'contactname',
+  'name', 'fullname', 'email', 'phone', 'phonelabel', 'tags', 'tag', 'source',
+  'type', 'dnd', 'dndsettings', 'inbounddndsettings', 'dateadded', 'dateupdated',
+  'datecreated', 'date_added', 'date_created', 'createdat', 'updatedat',
+  'additionalemails', 'additionalphones', 'followers', 'validemail', 'opportunities',
+  'searchafter', 'timezone', 'attributionsource', 'lastattributionsource', 'customfields',
+  'country', 'companyname', 'company_name', 'dateofbirth',
+]);
+
+// Capture every submitted custom field as { label: value } for the popup.
+// Reads the raw customFields array so we keep ALL Meta form answers, resolving
+// IDs to their GHL labels via fieldMap.
+function extractFormFields(payload, fieldMap) {
+  const out = {};
+  const cf = payload.customFields || payload.custom_fields || payload.customField
+    || (payload.contact && (payload.contact.customFields || payload.contact.customField));
+  if (Array.isArray(cf)) {
+    for (const f of cf) {
+      const def = fieldMap && f.id ? fieldMap[f.id] : null;
+      const label = (def && def.name) || f.name || f.key || f.id;
+      let value = f.value !== undefined ? f.value : f.field_value;
+      if (Array.isArray(value)) value = value.join(', ');
+      if (value === undefined || value === null || String(value).trim() === '') continue;
+      if (!label) continue;
+      out[label] = String(value);
+    }
+  } else if (cf && typeof cf === 'object') {
+    for (const [k, v] of Object.entries(cf)) {
+      if (v === undefined || v === null || String(v).trim() === '') continue;
+      if (NON_FORM_KEYS.has(String(k).toLowerCase())) continue;
+      out[k] = String(v);
+    }
+  }
+  return out;
+}
+
 // Find a value whose (normalized) field label contains any fragment.
 function findByLabel(bag, fragments) {
   for (const [k, v] of Object.entries(bag)) {
@@ -141,6 +180,7 @@ function transformContact(payload, fieldMap) {
   const contactId = pick(bag, ['contact_id', 'contactId', 'id']) || email || name;
 
   const details = extractDetails(bag);
+  const fields = extractFormFields(payload, fieldMap);
 
   const lead = {
     id: String(contactId),
@@ -155,6 +195,7 @@ function transformContact(payload, fieldMap) {
     tags
   };
   if (Object.keys(details).length > 0) lead.details = details;
+  if (Object.keys(fields).length > 0) lead.fields = fields;
   return lead;
 }
 
