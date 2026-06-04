@@ -1,7 +1,7 @@
 // Bulk import: pulls ALL GHL contacts, keeps those tagged meta / meta fda.
 const { transformContact, hasQualifyingTag, normalizeTags } = require('./_lib/transform');
-const { saveLead, isConfigured, getAllLeads, deleteLead, saveFieldMap } = require('./_lib/store');
-const { ghlConfigured, fetchQualifyingContacts, fetchCustomFieldDefs, collectTagSamples } = require('./_lib/ghl-client');
+const { saveLead, isConfigured, getAllLeads, deleteLead } = require('./_lib/store');
+const { ghlConfigured, fetchQualifyingContacts, fetchCustomFieldMap, collectTagSamples } = require('./_lib/ghl-client');
 
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -55,15 +55,12 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    // Resolve custom-field IDs -> labels so Meta form answers land in the popup.
-    let fieldMap = {};
+    let customFieldMap = {};
     try {
-      const defs = await fetchCustomFieldDefs();
-      fieldMap = defs.map || {};
-      // Cache so the real-time webhook can resolve fields without an API call.
-      await saveFieldMap(fieldMap);
+      customFieldMap = await fetchCustomFieldMap();
     } catch (e) {
-      // Non-fatal: leads still import without rich details.
+      // Non-fatal: without it, custom form fields just won't populate the popup.
+      customFieldMap = {};
     }
 
     const { contacts, total } = await fetchQualifyingContacts();
@@ -76,7 +73,7 @@ module.exports = async function handler(req, res) {
         skipped++;
         continue;
       }
-      const lead = transformContact(contact, fieldMap);
+      const lead = transformContact(contact, customFieldMap);
       await saveLead(lead);
       imported++;
     }
@@ -96,15 +93,14 @@ module.exports = async function handler(req, res) {
     response.tagsFound = tagCounts;
 
     if (debug) {
+      response.customFieldNames = Object.values(customFieldMap).map(f => f.name).filter(Boolean);
       const sample = contacts.find(c => Array.isArray(c.customFields) && c.customFields.length) || contacts[0];
-      response.sampleContact = sample
-        ? { tags: sample.tags, customFields: sample.customFields, keys: Object.keys(sample) }
-        : null;
-      try {
-        const defs = await fetchCustomFieldDefs();
-        response.customFieldDefs = defs.fields.map(f => ({ id: f.id, name: f.name, fieldKey: f.fieldKey, dataType: f.dataType }));
-      } catch (e) {
-        response.customFieldDefsError = String(e && e.message || e);
+      if (sample) {
+        response.sampleContact = {
+          tags: sample.tags,
+          rawCustomFields: sample.customFields,
+          resolvedLead: transformContact(sample, customFieldMap),
+        };
       }
     }
 

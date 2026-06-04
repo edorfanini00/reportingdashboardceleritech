@@ -23,15 +23,4 @@ async function deleteLead(id) {
   await kv.hdel(HASH_KEY, id);
 }
 
-const FIELDMAP_KEY = 'ghl:fieldmap';
-
-async function saveFieldMap(map) {
-  await kv.set(FIELDMAP_KEY, map);
-}
-
-async function getFieldMap() {
-  const map = await kv.get(FIELDMAP_KEY);
-  return map && typeof map === 'object' ? map : {};
-}
-
-module.exports = { saveLead, getAllLeads, deleteLead, saveFieldMap, getFieldMap, isConfigured, HASH_KEY };
+module.exports = { saveLead, getAllLeads, deleteLead, isConfigured, HASH_KEY };

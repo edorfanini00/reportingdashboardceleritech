@@ -1,7 +1,7 @@
 // GoHighLevel -> dashboard ingestion endpoint.
 // Point a GHL Workflow "Webhook" action here (trigger: Contact Tag = meta / meta fda).
 const { transformContact, normalizeTags, hasQualifyingTag } = require('./_lib/transform');
-const { saveLead, isConfigured, getFieldMap } = require('./_lib/store');
+const { saveLead, isConfigured } = require('./_lib/store');
 
 async function readBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -41,9 +41,7 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    let fieldMap = {};
-    try { fieldMap = await getFieldMap(); } catch (e) { /* optional */ }
-    const lead = transformContact(payload, fieldMap);
+    const lead = transformContact(payload);
     await saveLead(lead);
     res.status(200).json({ ok: true, lead });
   } catch (err) {
