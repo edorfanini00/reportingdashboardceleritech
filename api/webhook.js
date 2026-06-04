@@ -2,6 +2,23 @@
 // Point a GHL Workflow "Webhook" action here (trigger: Contact Tag = meta / meta fda).
 const { transformContact, normalizeTags, hasQualifyingTag } = require('./_lib/transform');
 const { saveLead, isConfigured } = require('./_lib/store');
+const { ghlConfigured, fetchCustomFieldMap } = require('./_lib/ghl-client');
+
+// Cache the custom-field map across warm invocations to avoid an API call per webhook.
+let cachedFieldMap = null;
+let cachedAt = 0;
+async function getFieldMap() {
+  if (!ghlConfigured()) return {};
+  const fresh = Date.now() - cachedAt < 10 * 60 * 1000; // 10 min
+  if (cachedFieldMap && fresh) return cachedFieldMap;
+  try {
+    cachedFieldMap = await fetchCustomFieldMap();
+    cachedAt = Date.now();
+  } catch {
+    cachedFieldMap = cachedFieldMap || {};
+  }
+  return cachedFieldMap;
+}
 
 async function readBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -41,7 +58,8 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const lead = transformContact(payload);
+    const fieldMap = await getFieldMap();
+    const lead = transformContact(payload, fieldMap);
     await saveLead(lead);
     res.status(200).json({ ok: true, lead });
   } catch (err) {
