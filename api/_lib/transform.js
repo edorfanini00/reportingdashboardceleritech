@@ -3,20 +3,59 @@
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// Fuzzy mapping from the dashboard "details" keys to substrings that may appear
-// in a GHL custom-field label/key. First match wins. Edit freely as your forms change.
-const DETAIL_FIELD_MAP = {
-  companyDesc: ['company description', 'which best describes', 'best describes your', 'business type', 'type of business', 'company_desc', 'companydesc', 'describe your company', 'industry'],
-  challenge: ['challenge', 'biggest pain', 'pain point', 'struggling', 'problem you', 'main issue'],
-  software: ['current software', 'software', 'current system', 'currently using', 'erp', 'manage your', 'what system'],
-  timeline: ['timeline', 'time frame', 'timeframe', 'how soon', 'when do you', 'deadline', 'looking to start'],
-  budget: ['budget', 'investment', 'spend'],
-  employees: ['employees', 'team size', 'how many people', 'number of employees', 'headcount', 'staff'],
-  role: ['role', 'your position', 'job title', 'title at', 'what is your role'],
-  website: ['website', 'web site', 'company url', 'site url', 'url'],
-  foodType: ['type of food', 'food type', 'what do you make', 'what do you produce', 'product type', 'what products'],
-  city: ['city', 'location', 'address', 'where are you']
+// Precise, FDA-aware mapping from dashboard "details" keys to the exact GHL
+// custom-field names (normalized). Meta-campaign leads use the `meta` list;
+// FDA-campaign leads prefer the `fda` list first. Matched by exact normalized
+// name, so gating questions like "Do you have an estimated budget?" are ignored.
+const DETAIL_FIELDS = {
+  companyDesc: {
+    meta: ['which best describes your company', 'company description', 'what industry do you operate in'],
+    fda: ['company description fda', 'which best describes your company'],
+  },
+  challenge: {
+    meta: ['what is your biggest operational challenge right now', 'operational challenge'],
+    fda: ['biggest compliance concern', 'what is your biggest operational challenge right now'],
+  },
+  software: {
+    meta: ['do you currently use any software to manage production inventory or logistics', 'do you currently use any software'],
+    fda: ['how they are currently managing compliance records', 'do you currently use any software'],
+  },
+  timeline: {
+    meta: ['timeline'],
+    fda: ['timeline fda', 'timeline'],
+  },
+  budget: {
+    meta: ['budget'],
+    fda: ['budget'],
+  },
+  employees: {
+    meta: ['number of employees', 'how many employees are working in the company'],
+    fda: ['number of employees fda', 'number of employees'],
+  },
+  role: {
+    meta: ['role in the company', 'role'],
+    fda: ['role fda', 'role in the company', 'role'],
+  },
+  website: {
+    meta: ['website'],
+    fda: ['website'],
+  },
+  foodType: {
+    meta: ['producto que te interesa'],
+    fda: [],
+  },
+  city: {
+    meta: ["city you're located in"],
+    fda: ["city you're located in"],
+  },
 };
+
+// Values that are clearly GHL internal ids (no spaces, long alphanumeric) should
+// never populate a human-facing detail field.
+function looksLikeId(value) {
+  const s = String(value).trim();
+  return /^[A-Za-z0-9]{18,}$/.test(s) && !/\s/.test(s);
+}
 
 function pick(obj, keys) {
   for (const k of keys) {
@@ -99,19 +138,26 @@ function normalizeKey(k) {
   return String(k)
     .toLowerCase()
     .replace(/^contact\./, '')
-    .replace(/[._-]+/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-// Build the lead.details object by fuzzy-matching all flattened fields.
-function extractDetails(bag) {
+// Build the lead.details object using exact, FDA-aware field-name matching.
+function extractDetails(bag, isFda) {
   const details = {};
-  const entries = Object.entries(bag).map(([k, v]) => [normalizeKey(k), k, v]);
-  for (const [detailKey, fragments] of Object.entries(DETAIL_FIELD_MAP)) {
-    for (const [lk, , value] of entries) {
-      if (value === undefined || value === null || String(value).trim() === '') continue;
-      if (fragments.some(fr => lk.includes(fr))) { details[detailKey] = String(value); break; }
+  // normalized field name -> value (skip empties and id-like values)
+  const byName = {};
+  for (const [k, v] of Object.entries(bag)) {
+    if (v === undefined || v === null || String(v).trim() === '') continue;
+    if (looksLikeId(v)) continue;
+    const nk = normalizeKey(k);
+    if (!(nk in byName)) byName[nk] = String(v);
+  }
+  for (const [detailKey, cfg] of Object.entries(DETAIL_FIELDS)) {
+    const candidates = isFda ? cfg.fda : cfg.meta;
+    for (const cand of candidates) {
+      if (byName[cand] !== undefined) { details[detailKey] = byName[cand]; break; }
     }
   }
   return details;
@@ -143,13 +189,14 @@ function transformContact(payload, customFieldMap) {
 
   const contactId = pick(bag, ['contact_id', 'contactId', 'id']) || email || name;
 
-  const details = extractDetails(bag);
+  const pipeline = pipelineFromTags(tags);
+  const details = extractDetails(bag, pipeline === 'FDA');
 
   const lead = {
     id: String(contactId),
     name,
     source: 'Meta ads',
-    pipeline: pipelineFromTags(tags),
+    pipeline,
     date: formatDisplayDate(d),
     dateISO,
     email,
