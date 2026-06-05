@@ -98,7 +98,7 @@ LinkedIn Outreach
 <span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span>
 GoHighLevel
 </div>
-<button onclick="refreshGhlLeads()" id="refreshBtn" type="button" class="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl px-3 py-2 text-[11px] font-bold shadow-sm transition-colors">
+<button onclick="refreshGhlLeads(true)" id="refreshBtn" type="button" class="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl px-3 py-2 text-[11px] font-bold shadow-sm transition-colors">
 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
 Sync
 </button>
@@ -742,12 +742,24 @@ function setSyncStatus(text) {
     document.getElementById('syncStatus').innerHTML =
         '<span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span> ' + text;
 }
-async function refreshGhlLeads() {
+// Trigger the server to pull fresh contacts from GoHighLevel into storage.
+// Best-effort: failures here shouldn't block reading whatever is stored.
+async function pullFromGhl() {
+    try {
+        const r = await fetch('/api/sync', { method: 'POST', cache: 'no-store' });
+        return await r.json();
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+}
+// pull=true first asks the server to fetch new leads from GHL, then reads them.
+async function refreshGhlLeads(pull = false) {
     const btn = document.getElementById('refreshBtn');
     btn.disabled = true;
     btn.classList.add('opacity-60');
-    setSyncStatus('Syncing…');
+    setSyncStatus(pull ? 'Pulling from GoHighLevel…' : 'Syncing…');
     try {
+        if (pull) await pullFromGhl();
         const r = await fetch('/api/leads', { cache: 'no-store' });
         const j = await r.json();
         if (j.configured === false) {
@@ -772,8 +784,13 @@ async function refreshGhlLeads() {
 }
 window.onload = () => {
     handleWeekChange('may-18');
-    refreshGhlLeads();
-    setInterval(refreshGhlLeads, 60000);
+    // On load, pull from GHL so the dashboard reflects the latest leads even if
+    // a webhook delivery was missed.
+    refreshGhlLeads(true);
+    // Light read of stored leads every 60s (picks up webhook-delivered leads).
+    setInterval(() => refreshGhlLeads(false), 60000);
+    // Full pull from GHL every 4 min as a backstop for any missed webhooks.
+    setInterval(() => refreshGhlLeads(true), 240000);
 };
 </script>
 </body>
