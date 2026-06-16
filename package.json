@@ -3,7 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "description": "CeleriTech Marketing Dashboard with GoHighLevel live lead ingestion",
+  "scripts": {
+    "tag:sentbyjohn": "node scripts/tag-sentbyjhon.js",
+    "tag:sentbyjohn:apply": "node scripts/tag-sentbyjhon.js --apply"
+  },
   "dependencies": {
     "@vercel/kv": "^3.0.0"
+  },
+  "devDependencies": {
+    "vercel": "^54.14.0"
   }
 }

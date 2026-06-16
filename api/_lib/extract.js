@@ -1,0 +1,147 @@
+// Pull candidate contacts out of free-text email bodies.
+//
+// John writes the people he wants us to reach out to in the email body. There is
+// no fixed template, so we extract the reliable identifiers (email, phone) with
+// regex and best-effort a name/company near each one. Email/phone are treated as
+// high-confidence match keys; name/company are advisory only.
+
+const EMAIL_RE = /[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/gi;
+
+// Phone: 10-15 digits allowing +, spaces, dashes, dots, parens. Requires enough
+// digits to avoid matching prices/years.
+const PHONE_RE = /(?:\+?\d[\d().\-\s]{8,16}\d)/g;
+
+// Domains that are mail providers, not companies.
+const FREE_DOMAINS = new Set([
+  'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com',
+  'aol.com', 'live.com', 'msn.com', 'protonmail.com', 'me.com', 'comcast.net',
+]);
+
+function normalizePhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function titleCaseFromDomain(domain) {
+  const core = domain.split('.')[0];
+  if (!core) return '';
+  return core.charAt(0).toUpperCase() + core.slice(1);
+}
+
+// Look backwards from a position for a "Firstname Lastname" style name on the
+// same or previous line (common in "John Smith john@acme.com" or "Name: ...").
+function guessNameNear(text, index) {
+  const before = text.slice(Math.max(0, index - 80), index);
+  const labeled = before.match(/(?:name|contact|attn)\s*[:\-]\s*([A-Z][a-zA-Z'’.\-]+(?:\s+[A-Z][a-zA-Z'’.\-]+){0,3})\s*$/i);
+  if (labeled) return labeled[1].trim();
+  const trailing = before.match(/([A-Z][a-zA-Z'’.\-]+(?:\s+[A-Z][a-zA-Z'’.\-]+){0,2})[\s,(<\-]*$/);
+  if (trailing) return trailing[1].trim();
+  return '';
+}
+
+function guessCompanyNear(text, index, emailDomain) {
+  const window = text.slice(Math.max(0, index - 120), index + 40);
+  const labeled = window.match(/(?:company|business|organization|org|firm)\s*[:\-]\s*([A-Z0-9][^\n,;]{1,60})/i);
+  if (labeled) return labeled[1].trim();
+  if (emailDomain && !FREE_DOMAINS.has(emailDomain.toLowerCase())) {
+    return titleCaseFromDomain(emailDomain);
+  }
+  return '';
+}
+
+// Extract contacts from a single email body. Anchors on email addresses first
+// (most reliable), then sweeps up phone numbers that weren't tied to an email.
+function extractFromBody(text, meta = {}) {
+  if (!text) return [];
+  const found = [];
+  const seenEmails = new Set();
+  const senderDomain = (meta.from || '').split('@')[1] || '';
+
+  let m;
+  EMAIL_RE.lastIndex = 0;
+  while ((m = EMAIL_RE.exec(text))) {
+    const email = m[0].toLowerCase();
+    const domain = email.split('@')[1] || '';
+    // Skip John's own address and obvious noise.
+    if (domain && senderDomain && domain === senderDomain) continue;
+    if (seenEmails.has(email)) continue;
+    seenEmails.add(email);
+
+    const tail = text.slice(m.index + m[0].length, m.index + m[0].length + 60);
+    const phoneNear = (tail.match(PHONE_RE) || [])[0];
+
+    found.push({
+      email,
+      phone: phoneNear ? normalizePhone(phoneNear) : '',
+      name: guessNameNear(text, m.index),
+      company: guessCompanyNear(text, m.index, domain),
+      source: { subject: meta.subject, receivedDateTime: meta.receivedDateTime },
+    });
+  }
+
+  // Phone numbers with no email anchor: keep as phone-only candidates.
+  const emailSpans = [];
+  EMAIL_RE.lastIndex = 0;
+  while ((m = EMAIL_RE.exec(text))) emailSpans.push([m.index, m.index + m[0].length]);
+  const nearEmail = (idx) => emailSpans.some(([s, e]) => idx >= s - 60 && idx <= e + 60);
+
+  const seenPhones = new Set(found.map(f => f.phone).filter(Boolean));
+  PHONE_RE.lastIndex = 0;
+  while ((m = PHONE_RE.exec(text))) {
+    const phone = normalizePhone(m[0]);
+    if (phone.length < 10) continue;
+    if (nearEmail(m.index)) continue;
+    if (seenPhones.has(phone)) continue;
+    seenPhones.add(phone);
+    found.push({
+      email: '',
+      phone,
+      name: guessNameNear(text, m.index),
+      company: '',
+      source: { subject: meta.subject, receivedDateTime: meta.receivedDateTime },
+    });
+  }
+
+  return found;
+}
+
+// Extract across many messages and dedupe by email||phone.
+function extractFromMessages(messages) {
+  const byKey = new Map();
+  for (const msg of messages) {
+    const contacts = extractFromBody(msg.bodyText, {
+      from: msg.from,
+      subject: msg.subject,
+      receivedDateTime: msg.receivedDateTime,
+    });
+    for (const c of contacts) {
+      const key = c.email || c.phone;
+      if (!key) continue;
+      const existing = byKey.get(key);
+      if (existing) {
+        // Merge: prefer non-empty fields.
+        existing.phone = existing.phone || c.phone;
+        existing.name = existing.name || c.name;
+        existing.company = existing.company || c.company;
+      } else {
+        byKey.set(key, c);
+      }
+    }
+  }
+  return [...byKey.values()];
+}
+
+// Generate typo-corrected variants of an email (bad TLDs / stray trailing char).
+function emailVariants(email) {
+  if (!email || !email.includes('@')) return [];
+  const [local, domain] = email.split('@');
+  const out = new Set();
+  if (/\.com[a-z]$/.test(domain)) out.add(`${local}@${domain.replace(/\.com[a-z]$/, '.com')}`);
+  if (/\.(con|cim|ocm|vom|xom|cpm|comm)$/.test(domain)) {
+    out.add(`${local}@${domain.replace(/\.(con|cim|ocm|vom|xom|cpm|comm)$/, '.com')}`);
+  }
+  out.delete(email);
+  return [...out];
+}
+
+module.exports = { extractFromBody, extractFromMessages, normalizePhone, emailVariants, EMAIL_RE, PHONE_RE };
