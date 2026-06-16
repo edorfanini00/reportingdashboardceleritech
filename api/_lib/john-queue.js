@@ -1,5 +1,5 @@
-// Dashboard queue for leads John shared by email. Sync imports here; Send pushes
-// selected leads to GoHighLevel.
+// Dashboard queue for leads John shared by email. Sync imports here (persisted
+// in KV so they survive refreshes); Send pushes selected leads to GoHighLevel.
 const { kv } = require('@vercel/kv');
 
 const QUEUE_KEY = 'johnsync:queue';
@@ -23,74 +23,124 @@ function companyKey(c) {
   return leadKey(c);
 }
 
+// Build the stored shape, merging fresh extraction over an existing record while
+// preserving user edits/overrides and status.
 function normalizeLead(c, existing) {
   const key = leadKey(c);
   const now = new Date().toISOString();
-  const base = {
+  const fresh = {
     id: key,
     name: c.name || '',
     email: c.email || '',
     phone: c.phone || '',
     company: c.company || '',
+    title: c.title || '',
+    website: c.website || '',
+    address1: c.address1 || '',
+    city: c.city || '',
+    state: c.state || '',
+    postalCode: c.postalCode || '',
+    notes: c.notes || '',
     companyKey: companyKey(c),
-    status: 'pending',
-    discoveredAt: now,
-    sentAt: null,
-    source: c.source || null,
   };
-  if (existing) {
+  if (!existing) {
     return {
-      ...existing,
-      name: existing.name || base.name,
-      phone: existing.phone || base.phone,
-      company: existing.company || base.company,
-      companyKey: existing.companyKey || base.companyKey,
-      source: existing.source || base.source,
-      // Keep sent status once uploaded.
-      status: existing.status === 'sent' ? 'sent' : 'pending',
-      discoveredAt: existing.discoveredAt || base.discoveredAt,
+      ...fresh,
+      status: 'pending',
+      isNew: true,
+      inCrm: false,
+      pipelineId: null,
+      stageId: null,
+      assignedTo: null,
+      discoveredAt: now,
+      sentAt: null,
     };
   }
-  return base;
-}
-
-async function getAll() {
-  const raw = (await kv.hgetall(QUEUE_KEY)) || {};
-  return Object.values(raw);
+  // Preserve user-edited values; only backfill empties from fresh extraction.
+  return {
+    ...existing,
+    name: existing.edited ? existing.name : (existing.name || fresh.name),
+    phone: existing.phone || fresh.phone,
+    company: existing.company || fresh.company,
+    title: existing.title || fresh.title,
+    website: existing.website || fresh.website,
+    address1: existing.address1 || fresh.address1,
+    city: existing.city || fresh.city,
+    state: existing.state || fresh.state,
+    postalCode: existing.postalCode || fresh.postalCode,
+    notes: existing.notes || fresh.notes,
+    companyKey: existing.companyKey || fresh.companyKey,
+    isNew: false,
+    discoveredAt: existing.discoveredAt || now,
+  };
 }
 
 async function getMap() {
   return (await kv.hgetall(QUEUE_KEY)) || {};
 }
 
+async function getAll() {
+  return Object.values(await getMap());
+}
+
+// Merge a fresh extraction into the queue. Existing leads are flagged isNew=false;
+// genuinely new ones isNew=true so the UI can highlight what arrived this sync.
 async function mergeCandidates(candidates, { legacySentKeys } = {}) {
   const map = await getMap();
-  let added = 0;
+  const addedKeys = [];
+  // Reset isNew on everything already present.
+  for (const k of Object.keys(map)) {
+    if (map[k] && map[k].isNew) map[k] = { ...map[k], isNew: false };
+  }
   for (const c of candidates) {
     const key = leadKey(c);
     if (!key) continue;
     const existing = map[key];
-    if (!existing) added++;
+    if (!existing) addedKeys.push(key);
     map[key] = normalizeLead(c, existing);
     if (legacySentKeys && legacySentKeys.has(key) && map[key].status !== 'sent') {
-      map[key] = { ...map[key], status: 'sent', sentAt: map[key].sentAt || legacySentKeys.get(key) || new Date().toISOString() };
+      map[key] = { ...map[key], status: 'sent', isNew: false, sentAt: map[key].sentAt || legacySentKeys.get(key) || new Date().toISOString() };
     }
   }
   if (Object.keys(map).length) await kv.hset(QUEUE_KEY, map);
-  return { added, total: Object.keys(map).length };
+  return { added: addedKeys.length, addedKeys, total: Object.keys(map).length };
+}
+
+// Patch arbitrary fields on a queue item (user edits + pipeline/stage overrides).
+async function updateLead(key, patch) {
+  const map = await getMap();
+  if (!map[key]) return null;
+  const allowed = ['name', 'phone', 'company', 'title', 'website', 'address1', 'city', 'state', 'postalCode', 'notes', 'pipelineId', 'stageId', 'assignedTo'];
+  const next = { ...map[key] };
+  for (const f of allowed) {
+    if (Object.prototype.hasOwnProperty.call(patch, f)) next[f] = patch[f];
+  }
+  next.edited = true;
+  map[key] = next;
+  await kv.hset(QUEUE_KEY, { [key]: next });
+  return next;
+}
+
+async function setInCrmFlags(flags) {
+  const map = await getMap();
+  let changed = false;
+  for (const [key, val] of Object.entries(flags)) {
+    if (map[key] && map[key].inCrm !== val) { map[key] = { ...map[key], inCrm: val }; changed = true; }
+  }
+  if (changed) await kv.hset(QUEUE_KEY, map);
 }
 
 async function markSent(keys) {
   const map = await getMap();
   const now = new Date().toISOString();
+  const patch = {};
   for (const key of keys) {
-    if (map[key]) {
-      map[key] = { ...map[key], status: 'sent', sentAt: now };
-    }
+    if (map[key]) patch[key] = { ...map[key], status: 'sent', isNew: false, sentAt: now };
   }
-  if (Object.keys(map).length) await kv.hset(QUEUE_KEY, map);
+  if (Object.keys(patch).length) await kv.hset(QUEUE_KEY, patch);
 }
 
+// Flag pending leads that share a company so the UI can warn about duplicates.
 function annotateDuplicates(leads) {
   const byCompany = new Map();
   for (const l of leads) {
@@ -116,6 +166,8 @@ module.exports = {
   getAll,
   getMap,
   mergeCandidates,
+  updateLead,
+  setInCrmFlags,
   markSent,
   annotateDuplicates,
 };

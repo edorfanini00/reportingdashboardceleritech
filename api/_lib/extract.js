@@ -9,7 +9,7 @@ const EMAIL_RE = /[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/gi;
 
 // Phone: 10-15 digits allowing +, spaces, dashes, dots, parens. Requires enough
 // digits to avoid matching prices/years.
-const PHONE_RE = /(?:\+?\d[\d().\-\s]{8,16}\d)/g;
+const PHONE_RE = /(?:\+?\d[\d().\- \t]{8,16}\d)/g;
 
 // Domains that are mail providers, not companies.
 const FREE_DOMAINS = new Set([
@@ -30,12 +30,26 @@ function titleCaseFromDomain(domain) {
 
 // Look backwards from a position for a "Firstname Lastname" style name on the
 // same or previous line (common in "John Smith john@acme.com" or "Name: ...").
+const TITLE_WORDS = /\b(CEO|CFO|CTO|COO|CIO|President|VP|Founder|Owner|Director|Manager|Officer|Chief|Head|Inc|LLC|Ltd|Corp|Company|Co|Group|Systems|Solutions|Salt|Wines|Lighting|Media|Roofing|Electromechanics)\b/i;
+const NAME_LIKE = /^[A-Z][a-zA-Z'’.\-]+(?:\s+[A-Z][a-zA-Z'’.\-]+){1,2}$/;
+
 function guessNameNear(text, index) {
-  const before = text.slice(Math.max(0, index - 80), index);
+  const before = text.slice(Math.max(0, index - 160), index);
   const labeled = before.match(/(?:name|contact|attn)\s*[:\-]\s*([A-Z][a-zA-Z'’.\-]+(?:\s+[A-Z][a-zA-Z'’.\-]+){0,3})\s*$/i);
   if (labeled) return labeled[1].trim();
-  const trailing = before.match(/([A-Z][a-zA-Z'’.\-]+(?:\s+[A-Z][a-zA-Z'’.\-]+){0,2})[\s,(<\-]*$/);
-  if (trailing) return trailing[1].trim();
+
+  // "reach out to Ben Dennis" / "contact Ben Dennis"
+  const verb = before.match(/(?:reach out to|contact|add|for|prospect[oa]?:?)\s+([A-Z][a-zA-Z'’.\-]+(?:\s+[A-Z][a-zA-Z'’.\-]+){1,2})/i);
+  if (verb && !TITLE_WORDS.test(verb[1])) return verb[1].trim();
+
+  // Walk preceding lines, prefer a clean "First Last" with no title/company words.
+  const lines = before.split('\n').map(l => l.replace(/[,(<\-]+$/, '').trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const candidate = lines[i].replace(/^.*?(?:reach out to|contact|add|for)\s+/i, '').trim();
+    if (NAME_LIKE.test(candidate) && !TITLE_WORDS.test(candidate)) return candidate;
+  }
+  const trailing = before.match(/([A-Z][a-zA-Z'’.\-]+(?:\s+[A-Z][a-zA-Z'’.\-]+){1,2})[\s,(<\-]*$/);
+  if (trailing && !TITLE_WORDS.test(trailing[1])) return trailing[1].trim();
   return '';
 }
 
@@ -47,6 +61,52 @@ function guessCompanyNear(text, index, emailDomain) {
     return titleCaseFromDomain(emailDomain);
   }
   return '';
+}
+
+// Grab a few lines of context around a position — this is the most useful raw
+// material for the GHL note, since John writes free-text detail near each lead.
+function snippetAround(text, index, len) {
+  let start = index;
+  let nl = 0;
+  while (start > 0 && nl < 3) { start--; if (text[start] === '\n') nl++; }
+  let end = index + len;
+  nl = 0;
+  while (end < text.length && nl < 3) { if (text[end] === '\n') nl++; end++; }
+  return text.slice(start, end).replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim();
+}
+
+// Pull a labeled field (e.g. "Title: CFO") from a window of text.
+function labeledField(window, names) {
+  const re = new RegExp('(?:' + names.join('|') + ')\\s*[:\\-]\\s*([^\\n]{1,80})', 'i');
+  const m = window.match(re);
+  return m ? m[1].trim().replace(/[,;.]+$/, '') : '';
+}
+
+const URL_RE = /(?:https?:\/\/|www\.)[a-z0-9.\-]+\.[a-z]{2,}(?:\/[^\s)]*)?/i;
+// Best-effort US street address: "123 Main St, City, ST 12345".
+const ADDR_RE = /\d{1,6}[ \t]+[A-Za-z0-9.\- ]+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Way|Ct|Court|Pl|Place|Suite|Ste|Unit|Fl|Floor)\b[^\n]*/i;
+
+function guessTitleNear(window) {
+  const labeled = labeledField(window, ['title', 'role', 'position', 'cargo', 'puesto']);
+  if (labeled) return labeled;
+  const m = window.match(/\b(CEO|CFO|CTO|COO|CIO|President|Vice President|VP|Founder|Co-?Founder|Owner|Director|Manager|Head of [A-Za-z ]{2,30}|Chief [A-Za-z ]{2,30} Officer)\b/i);
+  return m ? m[0].trim() : '';
+}
+
+function parseAddress(window) {
+  const labeled = labeledField(window, ['address', 'direccion', 'dirección', 'location']);
+  const raw = labeled || (window.match(ADDR_RE) || [])[0] || '';
+  if (!raw) return {};
+  const out = { address1: raw.trim() };
+  // City, ST ZIP
+  const m = raw.match(/,\s*([A-Za-z .'\-]{2,40}),\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)/);
+  if (m) {
+    out.city = m[1].trim();
+    out.state = m[2].trim();
+    out.postalCode = m[3].trim();
+    out.address1 = raw.slice(0, raw.indexOf(m[0])).trim() || raw.trim();
+  }
+  return out;
 }
 
 // Extract contacts from a single email body. Anchors on email addresses first
@@ -67,14 +127,24 @@ function extractFromBody(text, meta = {}) {
     if (seenEmails.has(email)) continue;
     seenEmails.add(email);
 
+    const win = text.slice(Math.max(0, m.index - 160), m.index + 200);
     const tail = text.slice(m.index + m[0].length, m.index + m[0].length + 60);
-    const phoneNear = (tail.match(PHONE_RE) || [])[0];
+    const phoneNear = (tail.match(PHONE_RE) || [])[0] || (win.match(PHONE_RE) || [])[0];
+    const websiteMatch = win.match(URL_RE);
+    const addr = parseAddress(win);
 
     found.push({
       email,
       phone: phoneNear ? normalizePhone(phoneNear) : '',
       name: guessNameNear(text, m.index),
       company: guessCompanyNear(text, m.index, domain),
+      title: guessTitleNear(win),
+      website: websiteMatch ? websiteMatch[0] : '',
+      address1: addr.address1 || '',
+      city: addr.city || '',
+      state: addr.state || '',
+      postalCode: addr.postalCode || '',
+      context: snippetAround(text, m.index, m[0].length),
       source: { subject: meta.subject, receivedDateTime: meta.receivedDateTime },
     });
   }
@@ -98,11 +168,27 @@ function extractFromBody(text, meta = {}) {
       phone,
       name: guessNameNear(text, m.index),
       company: '',
+      title: '',
+      website: '',
+      address1: '', city: '', state: '', postalCode: '',
+      context: snippetAround(text, m.index, m[0].length),
       source: { subject: meta.subject, receivedDateTime: meta.receivedDateTime },
     });
   }
 
   return found;
+}
+
+// Build a readable note from the email subject/date and the surrounding context.
+function buildNote(c) {
+  const parts = [];
+  const subj = c.source && c.source.subject;
+  const date = c.source && c.source.receivedDateTime;
+  if (subj || date) {
+    parts.push(`From John's email${subj ? `: "${subj}"` : ''}${date ? ` (${String(date).slice(0, 10)})` : ''}`);
+  }
+  if (c.context) parts.push(c.context);
+  return parts.join('\n').trim();
 }
 
 // Extract across many messages and dedupe by email||phone.
@@ -117,18 +203,30 @@ function extractFromMessages(messages) {
     for (const c of contacts) {
       const key = c.email || c.phone;
       if (!key) continue;
+      const note = buildNote(c);
       const existing = byKey.get(key);
       if (existing) {
-        // Merge: prefer non-empty fields.
+        // Merge: prefer non-empty fields, accumulate distinct notes.
         existing.phone = existing.phone || c.phone;
         existing.name = existing.name || c.name;
         existing.company = existing.company || c.company;
+        existing.title = existing.title || c.title;
+        existing.website = existing.website || c.website;
+        existing.address1 = existing.address1 || c.address1;
+        existing.city = existing.city || c.city;
+        existing.state = existing.state || c.state;
+        existing.postalCode = existing.postalCode || c.postalCode;
+        if (note && !existing._notes.includes(note)) existing._notes.push(note);
       } else {
+        c._notes = note ? [note] : [];
         byKey.set(key, c);
       }
     }
   }
-  return [...byKey.values()];
+  return [...byKey.values()].map(c => {
+    const { _notes, context, source, ...rest } = c;
+    return { ...rest, notes: (_notes || []).join('\n\n') };
+  });
 }
 
 // Generate typo-corrected variants of an email (bad TLDs / stray trailing char).

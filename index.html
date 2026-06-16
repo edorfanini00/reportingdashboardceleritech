@@ -392,6 +392,17 @@ Send Selected
 <div id="funnelModalContent" class="space-y-3"></div>
 </div>
 </div>
+<div id="johnLeadModal" class="modal-backdrop" onclick="if(event.target == this) toggleJohnModal(false)">
+<div class="bg-white/95 backdrop-blur-2xl border border-white rounded-[32px] p-5 md:p-7 w-full max-w-[640px] shadow-2xl relative max-h-[92vh] overflow-y-auto scroll-container">
+<button onclick="toggleJohnModal(false)" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors p-2 bg-slate-100/50 rounded-full"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+<header class="mb-4 pr-8"><h3 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight" id="johnModalTitle">Lead</h3><p class="text-[10px] md:text-[11px] font-bold text-indigo-500 uppercase tracking-widest mt-1" id="johnModalSub">Pending review</p></header>
+<div id="johnModalBody" class="space-y-2"></div>
+<div class="flex flex-col sm:flex-row gap-2 mt-5">
+<button id="johnModalSaveBtn" onclick="saveJohnLead(false)" type="button" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors">Save changes</button>
+<button id="johnModalSendBtn" onclick="saveJohnLead(true)" type="button" class="flex-1 flex items-center justify-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl px-4 py-2.5 text-sm font-bold shadow-sm transition-colors"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>Save &amp; send to GoHighLevel</button>
+</div>
+</div>
+</div>
 <script>
 function toggleFunnelModal(show) { document.getElementById('funnelModal').style.display = show ? 'flex' : 'none'; }
 function showFunnelLeads(type) {
@@ -998,6 +1009,17 @@ async function sendJohnSelected() {
     btn.disabled = true;
     btn.innerHTML = 'Sending\u2026';
     try {
+        await sendJohnKeys(keys);
+    } finally {
+        btn.innerHTML = original;
+        updateSendJohnBtn();
+    }
+}
+
+// Shared upload routine used by Send Selected and the per-contact modal.
+async function sendJohnKeys(keys) {
+    if (!keys || !keys.length) return;
+    try {
         const res = await fetch('/api/sync-john', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1006,21 +1028,18 @@ async function sendJohnSelected() {
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {
             showGhlBanner('Send failed: ' + (data.error || ('HTTP ' + res.status)));
-        } else {
-            let msg = 'Sent ' + (data.sent || 0) + ' lead(s) to GoHighLevel.';
-            if (data.created) msg += ' ' + data.created + ' new contact(s) + opportunity created.';
-            if (data.tagged) msg += ' ' + data.tagged + ' existing contact(s) tagged.';
-            if (data.errors && data.errors.length) msg += ' ' + data.errors.length + ' error(s).';
-            showGhlBanner(msg);
-            johnSelectedKeys.clear();
-            renderSyncedJohn(data);
-            refreshGhlLeads(true);
+            return;
         }
+        let msg = 'Sent ' + (data.sent || 0) + ' lead(s) to GoHighLevel.';
+        if (data.created) msg += ' ' + data.created + ' new contact(s) + opportunity created.';
+        if (data.tagged) msg += ' ' + data.tagged + ' existing contact(s) tagged.';
+        if (data.errors && data.errors.length) msg += ' ' + data.errors.length + ' error(s).';
+        showGhlBanner(msg);
+        keys.forEach(k => johnSelectedKeys.delete(k));
+        renderSyncedJohn(data);
+        refreshGhlLeads(true);
     } catch (e) {
         showGhlBanner('Send could not reach /api/sync-john (' + e.message + ').');
-    } finally {
-        btn.innerHTML = original;
-        updateSendJohnBtn();
     }
 }
 
@@ -1048,6 +1067,7 @@ async function loadSyncedJohn() {
     const body = document.getElementById('syncedJohnBody');
     if (!body) return;
     body.innerHTML = '<div class="text-center text-slate-400 text-sm py-10"><svg class="w-5 h-5 animate-spin inline-block mr-2 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Loading queue&hellip;</div>';
+    ensureJohnMeta();
     try {
         const res = await fetch('/api/sync-john');
         const data = await res.json().catch(() => ({}));
@@ -1072,20 +1092,27 @@ function renderSyncedJohn(data) {
     const pendingRow = (l) => {
         const checked = johnSelectedKeys.has(l.id);
         const title = l.company || l.name || l.email || '(unknown)';
-        const sub = [l.name && l.name !== l.company ? l.name : '', l.email, l.phone].filter(Boolean).join(' \u00b7 ');
+        const sub = [l.name && l.name !== l.company ? l.name : '', l.title, l.email, l.phone].filter(Boolean).join(' \u00b7 ');
         let badges = '';
+        if (l.isNew) {
+            badges += '<span class="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded bg-amber-400 text-white border border-amber-500 shrink-0">New</span>';
+        }
         if (l.isDuplicateCompany) {
             badges += '<span class="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 shrink-0">Same company (' + l.sameCompanyCount + ')</span>';
         }
         if (l.inCrm) {
             badges += '<span class="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 shrink-0">In CRM</span>';
         }
-        return '<label class="flex items-center gap-3 px-4 py-3 rounded-2xl border cursor-pointer ' + (l.isDuplicateCompany ? 'border-violet-200 bg-violet-50/30' : 'border-amber-200 bg-amber-50/40') + ' shadow-sm hover:border-indigo-300 transition-colors">'
-            + '<input type="checkbox" class="w-4 h-4 rounded border-slate-300 text-indigo-600 shrink-0" data-key="' + escapeHtml(l.id) + '" ' + (checked ? 'checked' : '') + ' onchange="toggleJohnLead(this.dataset.key, this.checked)">'
-            + '<div class="min-w-0 flex-1"><div class="text-sm font-bold text-slate-800 truncate">' + escapeHtml(title) + '</div>'
-            + '<div class="text-[11px] text-slate-400 font-medium truncate">' + (sub || '&mdash;') + '</div></div>'
-            + '<div class="flex flex-wrap gap-1 justify-end">' + badges + '</div>'
-            + '</label>';
+        const dest = '<span class="text-[10px] font-semibold text-slate-400">' + escapeHtml(pipelineLabel(l)) + '</span>';
+        return '<div class="flex items-center gap-3 px-4 py-3 rounded-2xl border ' + (l.isDuplicateCompany ? 'border-violet-200 bg-violet-50/30' : 'border-amber-200 bg-amber-50/40') + ' shadow-sm hover:border-indigo-300 transition-colors">'
+            + '<input type="checkbox" class="w-4 h-4 rounded border-slate-300 text-indigo-600 shrink-0 cursor-pointer" data-key="' + escapeHtml(l.id) + '" ' + (checked ? 'checked' : '') + ' onchange="toggleJohnLead(this.dataset.key, this.checked)">'
+            + '<div class="min-w-0 flex-1 cursor-pointer" onclick="openJohnLead(\'' + escapeHtml(l.id).replace(/'/g, "\\'") + '\')">'
+            + '<div class="text-sm font-bold text-slate-800 truncate">' + escapeHtml(title) + '</div>'
+            + '<div class="text-[11px] text-slate-400 font-medium truncate">' + (sub || '&mdash;') + '</div>'
+            + '<div class="mt-0.5">' + dest + '</div></div>'
+            + '<div class="flex flex-col items-end gap-1"><div class="flex flex-wrap gap-1 justify-end">' + badges + '</div>'
+            + '<button onclick="openJohnLead(\'' + escapeHtml(l.id).replace(/'/g, "\\'") + '\')" class="text-[10px] font-bold text-indigo-600 hover:text-indigo-800">Edit / route &rarr;</button></div>'
+            + '</div>';
     };
 
     const sentRow = (l) => {
@@ -1119,6 +1146,142 @@ function renderSyncedJohn(data) {
 
     document.getElementById('syncedJohnBody').innerHTML = html;
 }
+
+/* ---- pipeline/stage/user metadata + per-contact routing ---- */
+let johnMeta = null;       // { pipelines:[{id,name,stages:[]}], users:[], defaults:{} }
+let johnModalKey = null;
+
+async function ensureJohnMeta() {
+    if (johnMeta) return johnMeta;
+    try {
+        const res = await fetch('/api/sync-john?meta=1');
+        const data = await res.json();
+        if (data && data.ok) johnMeta = data;
+    } catch (e) { /* dropdowns will fall back to defaults */ }
+    return johnMeta;
+}
+function pipelineName(id) {
+    if (!johnMeta) return '';
+    const p = (johnMeta.pipelines || []).find(p => p.id === id);
+    return p ? p.name : '';
+}
+function stageName(pipelineId, stageId) {
+    if (!johnMeta) return '';
+    const p = (johnMeta.pipelines || []).find(p => p.id === pipelineId);
+    if (!p) return '';
+    const s = (p.stages || []).find(s => s.id === stageId);
+    return s ? s.name : '';
+}
+function userName(id) {
+    if (!johnMeta) return '';
+    const u = (johnMeta.users || []).find(u => u.id === id);
+    return u ? u.name : '';
+}
+function pipelineLabel(l) {
+    const d = (johnLeadsCache && johnMeta && johnMeta.defaults) || { pipelineId: null, stageId: null, assignedTo: null };
+    const pid = l.pipelineId || d.pipelineId;
+    const sid = l.stageId || d.stageId;
+    const aid = l.assignedTo || d.assignedTo;
+    const pn = pipelineName(pid) || 'Enterpryze';
+    const sn = stageName(pid, sid) || 'ERP Qualified';
+    const an = userName(aid) || 'Natalie';
+    return '\u2192 ' + pn + ' / ' + sn + ' \u00b7 ' + an;
+}
+
+async function openJohnLead(key) {
+    const l = (johnLeadsCache || []).find(x => x.id === key);
+    if (!l) return;
+    johnModalKey = key;
+    await ensureJohnMeta();
+    const d = (johnMeta && johnMeta.defaults) || {};
+    const curPipeline = l.pipelineId || d.pipelineId;
+    const curStage = l.stageId || d.stageId;
+    const curUser = l.assignedTo || d.assignedTo;
+
+    const field = (label, id, val) =>
+        '<div><label class="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">' + label + '</label>'
+        + '<input id="jl_' + id + '" value="' + escapeHtml(val || '') + '" class="w-full bg-white/70 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400"></div>';
+
+    const pipelineOpts = (johnMeta && johnMeta.pipelines || []).map(p =>
+        '<option value="' + escapeHtml(p.id) + '"' + (p.id === curPipeline ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>'
+    ).join('') || '<option value="">(defaults)</option>';
+    const userOpts = '<option value="">(default: Natalie)</option>' + (johnMeta && johnMeta.users || []).map(u =>
+        '<option value="' + escapeHtml(u.id) + '"' + (u.id === curUser ? ' selected' : '') + '>' + escapeHtml(u.name) + '</option>'
+    ).join('');
+
+    document.getElementById('johnModalTitle').innerText = l.company || l.name || l.email || 'Lead';
+    document.getElementById('johnModalSub').innerText = l.isNew ? 'New from latest sync' : (l.status === 'sent' ? 'Already sent' : 'Pending review');
+    document.getElementById('johnModalBody').innerHTML =
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">'
+        + field('Name', 'name', l.name) + field('Company', 'company', l.company)
+        + field('Email', 'email', l.email) + field('Phone', 'phone', l.phone)
+        + field('Title / Role', 'title', l.title) + field('Website', 'website', l.website)
+        + field('Address', 'address1', l.address1) + field('City', 'city', l.city)
+        + field('State', 'state', l.state) + field('Postal code', 'postalCode', l.postalCode)
+        + '</div>'
+        + '<div class="mt-3"><label class="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Notes (from John\'s email \u2192 saved to GoHighLevel)</label>'
+        + '<textarea id="jl_notes" rows="5" class="w-full bg-white/70 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400 scroll-container">' + escapeHtml(l.notes || '') + '</textarea></div>'
+        + '<div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 rounded-xl bg-indigo-50/50 border border-indigo-100">'
+        + '<div><label class="block text-[10px] font-bold uppercase tracking-wide text-indigo-500 mb-1">Pipeline</label>'
+        + '<select id="jl_pipeline" onchange="onJohnPipelineChange()" class="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 outline-none">' + pipelineOpts + '</select></div>'
+        + '<div><label class="block text-[10px] font-bold uppercase tracking-wide text-indigo-500 mb-1">Stage</label>'
+        + '<select id="jl_stage" class="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 outline-none"></select></div>'
+        + '<div><label class="block text-[10px] font-bold uppercase tracking-wide text-indigo-500 mb-1">Sales rep</label>'
+        + '<select id="jl_user" class="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 outline-none">' + userOpts + '</select></div>'
+        + '</div>';
+    renderJohnStageOptions(curStage);
+    toggleJohnModal(true);
+}
+function onJohnPipelineChange() { renderJohnStageOptions(null); }
+function renderJohnStageOptions(selectedStage) {
+    const sel = document.getElementById('jl_pipeline');
+    const stageSel = document.getElementById('jl_stage');
+    if (!sel || !stageSel) return;
+    const p = (johnMeta && johnMeta.pipelines || []).find(p => p.id === sel.value);
+    const stages = p ? (p.stages || []) : [];
+    stageSel.innerHTML = stages.map(s =>
+        '<option value="' + escapeHtml(s.id) + '"' + (s.id === selectedStage ? ' selected' : '') + '>' + escapeHtml(s.name) + '</option>'
+    ).join('') || '<option value="">(default stage)</option>';
+}
+function collectJohnModal() {
+    const val = id => { const el = document.getElementById('jl_' + id); return el ? el.value.trim() : ''; };
+    return {
+        name: val('name'), company: val('company'), phone: val('phone'),
+        title: val('title'), website: val('website'),
+        address1: val('address1'), city: val('city'), state: val('state'), postalCode: val('postalCode'),
+        notes: document.getElementById('jl_notes') ? document.getElementById('jl_notes').value : '',
+        pipelineId: (document.getElementById('jl_pipeline') || {}).value || null,
+        stageId: (document.getElementById('jl_stage') || {}).value || null,
+        assignedTo: (document.getElementById('jl_user') || {}).value || null,
+    };
+}
+async function saveJohnLead(thenSend) {
+    if (!johnModalKey) return;
+    const patch = collectJohnModal();
+    const btn = document.getElementById(thenSend ? 'johnModalSendBtn' : 'johnModalSaveBtn');
+    const original = btn.innerHTML; btn.disabled = true; btn.innerHTML = 'Saving\u2026';
+    try {
+        const res = await fetch('/api/sync-john', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'update', key: johnModalKey, patch }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) { showGhlBanner('Save failed: ' + (data.error || res.status)); return; }
+        if (thenSend) {
+            await sendJohnKeys([johnModalKey]);
+            toggleJohnModal(false);
+        } else {
+            toggleJohnModal(false);
+            loadSyncedJohn();
+        }
+    } catch (e) {
+        showGhlBanner('Save could not reach server (' + e.message + ').');
+    } finally {
+        btn.disabled = false; btn.innerHTML = original;
+    }
+}
+function toggleJohnModal(show) { document.getElementById('johnLeadModal').style.display = show ? 'flex' : 'none'; }
+
 function setSyncStatus(text) {
     document.getElementById('syncStatus').innerHTML =
         '<span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span> ' + text;
