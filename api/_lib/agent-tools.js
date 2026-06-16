@@ -76,6 +76,145 @@ const tools = [
       return users.map(u => ({ id: u.id, name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.name || '', email: u.email || '' }));
     },
   },
+  {
+    name: 'list_workflows',
+    write: false,
+    description: 'List automation workflows already built in GoHighLevel (id, name, status). NOTE: workflows/bots can only be BUILT in the GHL dashboard; via API you can only list them and enroll/remove contacts.',
+    input_schema: { type: 'object', properties: {} },
+    async run() {
+      const wfs = await ghl.listWorkflows();
+      return wfs.map(w => ({ id: w.id, name: w.name || '', status: w.status || '' }));
+    },
+  },
+  {
+    name: 'list_calendars',
+    write: false,
+    description: 'List calendars in the location (id, name) for booking appointments.',
+    input_schema: { type: 'object', properties: {} },
+    async run() {
+      const cals = await ghl.listCalendars();
+      return cals.map(c => ({ id: c.id, name: c.name || '' }));
+    },
+  },
+  {
+    name: 'list_tags',
+    write: false,
+    description: 'List all tags defined at the location level (name + id).',
+    input_schema: { type: 'object', properties: {} },
+    async run() {
+      const tags = await ghl.listLocationTags();
+      return tags.map(t => ({ id: t.id, name: t.name || '' }));
+    },
+  },
+  {
+    name: 'list_custom_fields',
+    write: false,
+    description: 'List contact custom-field definitions (id, name, fieldKey). Use to find the right key when updating a custom field on a contact.',
+    input_schema: { type: 'object', properties: {} },
+    async run() {
+      const map = await ghl.fetchCustomFieldMap();
+      return Object.entries(map).map(([id, v]) => ({ id, name: v.name, fieldKey: v.fieldKey }));
+    },
+  },
+  {
+    name: 'get_notes',
+    write: false,
+    description: 'Get the notes on a contact by contactId.',
+    input_schema: {
+      type: 'object',
+      properties: { contactId: { type: 'string' } },
+      required: ['contactId'],
+    },
+    async run({ contactId }) {
+      const notes = await ghl.getContactNotes(contactId);
+      return notes.map(n => ({ id: n.id, body: n.body || '', createdAt: n.dateAdded || n.createdAt || '' }));
+    },
+  },
+  {
+    name: 'get_tasks',
+    write: false,
+    description: 'Get the tasks on a contact by contactId.',
+    input_schema: {
+      type: 'object',
+      properties: { contactId: { type: 'string' } },
+      required: ['contactId'],
+    },
+    async run({ contactId }) {
+      const tasks = await ghl.getContactTasks(contactId);
+      return tasks.map(t => ({ id: t.id, title: t.title || '', body: t.body || '', dueDate: t.dueDate || '', completed: !!t.completed, assignedTo: t.assignedTo || '' }));
+    },
+  },
+  {
+    name: 'search_opportunities',
+    write: false,
+    description: 'Search opportunities. Optional filters: query (text), pipelineId, pipelineStageId, contactId, assignedTo, status (open/won/lost/abandoned). Returns id, name, pipeline/stage, status, value, contactId.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        pipelineId: { type: 'string' },
+        pipelineStageId: { type: 'string' },
+        contactId: { type: 'string' },
+        assignedTo: { type: 'string' },
+        status: { type: 'string' },
+      },
+    },
+    async run(params) {
+      const opps = await ghl.searchOpportunities(params);
+      return opps.slice(0, 20).map(o => ({
+        id: o.id,
+        name: o.name || '',
+        pipelineId: o.pipelineId || '',
+        pipelineStageId: o.pipelineStageId || o.stageId || '',
+        status: o.status || '',
+        value: o.monetaryValue != null ? o.monetaryValue : '',
+        contactId: (o.contact && o.contact.id) || o.contactId || '',
+      }));
+    },
+  },
+  {
+    name: 'get_opportunity',
+    write: false,
+    description: 'Get a single opportunity by id.',
+    input_schema: {
+      type: 'object',
+      properties: { opportunityId: { type: 'string' } },
+      required: ['opportunityId'],
+    },
+    async run({ opportunityId }) {
+      return ghl.getOpportunity(opportunityId);
+    },
+  },
+  {
+    name: 'list_conversations',
+    write: false,
+    description: 'Search conversations, optionally for a specific contactId. Returns conversation ids and last message preview.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        contactId: { type: 'string' },
+        query: { type: 'string' },
+      },
+    },
+    async run(params) {
+      const convos = await ghl.searchConversations(params);
+      return convos.slice(0, 20).map(c => ({ id: c.id, contactId: c.contactId || '', lastMessage: c.lastMessageBody || '', type: c.type || '' }));
+    },
+  },
+  {
+    name: 'get_messages',
+    write: false,
+    description: 'Get the messages in a conversation by conversationId.',
+    input_schema: {
+      type: 'object',
+      properties: { conversationId: { type: 'string' } },
+      required: ['conversationId'],
+    },
+    async run({ conversationId }) {
+      const msgs = await ghl.getConversationMessages(conversationId);
+      return (Array.isArray(msgs) ? msgs : []).slice(0, 50).map(m => ({ direction: m.direction || '', type: m.messageType || m.type || '', body: m.body || '', dateAdded: m.dateAdded || '' }));
+    },
+  },
 
   // ---------- WRITE (confirmation-gated) ----------
   {
@@ -189,137 +328,55 @@ const tools = [
       return { ok: true, opportunityId, updated: fields };
     },
   },
-
-  // ---------- READ (extended) ----------
   {
-    name: 'list_workflows',
-    write: false,
-    description: 'List existing GoHighLevel workflows (automations) with id, name, status. Note: the API can enroll/remove contacts into these but CANNOT create or edit the workflows themselves (that is done in the GHL dashboard).',
-    input_schema: { type: 'object', properties: {} },
-    async run() {
-      const wfs = await ghl.listWorkflows();
-      return wfs.map(w => ({ id: w.id, name: w.name, status: w.status }));
-    },
-  },
-  {
-    name: 'list_notes',
-    write: false,
-    description: 'List notes on a contact.',
-    input_schema: { type: 'object', properties: { contactId: { type: 'string' } }, required: ['contactId'] },
-    async run({ contactId }) {
-      const notes = await ghl.listNotes(contactId);
-      return notes.map(n => ({ id: n.id, body: n.body, createdAt: n.dateAdded || n.createdAt }));
-    },
-  },
-  {
-    name: 'list_tasks',
-    write: false,
-    description: 'List tasks on a contact.',
-    input_schema: { type: 'object', properties: { contactId: { type: 'string' } }, required: ['contactId'] },
-    async run({ contactId }) {
-      const tasks = await ghl.listTasks(contactId);
-      return tasks.map(t => ({ id: t.id, title: t.title, body: t.body, dueDate: t.dueDate, completed: t.completed, assignedTo: t.assignedTo }));
-    },
-  },
-  {
-    name: 'search_opportunities',
-    write: false,
-    description: 'Search opportunities. Filter by query, pipelineId, pipelineStageId, contactId, status (open/won/lost/abandoned), assignedTo.',
+    name: 'delete_opportunity',
+    write: true,
+    description: 'Delete an opportunity by id (irreversible). Set confirmed=true ONLY after the user approves.',
     input_schema: {
       type: 'object',
       properties: {
-        query: { type: 'string' },
-        pipelineId: { type: 'string' },
-        pipelineStageId: { type: 'string' },
-        contactId: { type: 'string' },
-        status: { type: 'string' },
-        assignedTo: { type: 'string' },
+        opportunityId: { type: 'string' },
+        confirmed: { type: 'boolean' },
       },
+      required: ['opportunityId'],
     },
-    async run(params) {
-      const opps = await ghl.searchOpportunities(params);
-      return opps.map(o => ({ id: o.id, name: o.name, status: o.status, pipelineId: o.pipelineId, stageId: o.pipelineStageId, monetaryValue: o.monetaryValue, contactId: (o.contact && o.contact.id) || o.contactId, assignedTo: o.assignedTo }));
-    },
-  },
-  {
-    name: 'get_opportunity',
-    write: false,
-    description: 'Get full details for a single opportunity by id.',
-    input_schema: { type: 'object', properties: { opportunityId: { type: 'string' } }, required: ['opportunityId'] },
     async run({ opportunityId }) {
-      return ghl.getOpportunity(opportunityId);
+      await ghl.deleteOpportunity(opportunityId);
+      return { ok: true, deleted: opportunityId };
     },
   },
   {
-    name: 'list_calendars',
-    write: false,
-    description: 'List the location calendars (id, name).',
-    input_schema: { type: 'object', properties: {} },
-    async run() {
-      const cals = await ghl.listCalendars();
-      return cals.map(c => ({ id: c.id, name: c.name }));
-    },
-  },
-  {
-    name: 'list_appointments',
-    write: false,
-    description: 'List appointments/events for a contact.',
-    input_schema: { type: 'object', properties: { contactId: { type: 'string' } }, required: ['contactId'] },
-    async run({ contactId }) {
-      return ghl.listAppointments(contactId);
-    },
-  },
-  {
-    name: 'search_conversations',
-    write: false,
-    description: 'Search conversations (optionally for a specific contactId or free-text query).',
+    name: 'delete_contact',
+    write: true,
+    description: 'Delete a contact by id (irreversible; also removes their opportunities). Set confirmed=true ONLY after the user approves.',
     input_schema: {
       type: 'object',
-      properties: { contactId: { type: 'string' }, query: { type: 'string' } },
+      properties: {
+        contactId: { type: 'string' },
+        confirmed: { type: 'boolean' },
+      },
+      required: ['contactId'],
     },
-    async run(params) {
-      const convos = await ghl.searchConversations(params);
-      return convos.map(c => ({ id: c.id, contactId: c.contactId, lastMessageBody: c.lastMessageBody, type: c.type, unreadCount: c.unreadCount }));
-    },
-  },
-  {
-    name: 'list_custom_fields',
-    write: false,
-    description: 'List the location custom field definitions (id, name, fieldKey, dataType, options). Use to find the right fieldKey/id before updating a custom field on a contact.',
-    input_schema: { type: 'object', properties: {} },
-    async run() {
-      const fields = await ghl.listCustomFields();
-      return fields.map(f => ({ id: f.id, name: f.name, fieldKey: f.fieldKey, dataType: f.dataType, options: f.picklistOptions || f.options }));
+    async run({ contactId }) {
+      await ghl.deleteContact(contactId);
+      return { ok: true, deleted: contactId };
     },
   },
-  {
-    name: 'list_tags',
-    write: false,
-    description: 'List all tags defined at the location.',
-    input_schema: { type: 'object', properties: {} },
-    async run() {
-      const tags = await ghl.listLocationTags();
-      return tags.map(t => ({ id: t.id, name: t.name }));
-    },
-  },
-
-  // ---------- WRITE (extended, confirmation-gated) ----------
   {
     name: 'add_to_workflow',
     write: true,
-    description: 'Enroll a contact into an existing workflow (this triggers your pre-built automation). Use list_workflows to find workflowId. Set confirmed=true ONLY after the user approves.',
+    description: 'Enroll a contact into an existing automation workflow (use list_workflows to get workflowId). This runs your pre-built automation. Set confirmed=true ONLY after the user approves.',
     input_schema: {
       type: 'object',
       properties: {
         contactId: { type: 'string' },
         workflowId: { type: 'string' },
-        eventStartTime: { type: 'string', description: 'Optional ISO time to start the workflow.' },
         confirmed: { type: 'boolean' },
       },
       required: ['contactId', 'workflowId'],
     },
-    async run({ contactId, workflowId, eventStartTime }) {
-      await ghl.addContactToWorkflow(contactId, workflowId, eventStartTime);
+    async run({ contactId, workflowId }) {
+      await ghl.addContactToWorkflow(contactId, workflowId);
       return { ok: true, contactId, workflowId, enrolled: true };
     },
   },
@@ -356,62 +413,25 @@ const tools = [
     },
     async run({ contactId, body }) {
       await ghl.addNote(contactId, body);
-      return { ok: true, contactId, added: 'note' };
-    },
-  },
-  {
-    name: 'update_note',
-    write: true,
-    description: 'Update an existing note on a contact. Set confirmed=true ONLY after the user approves.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        contactId: { type: 'string' },
-        noteId: { type: 'string' },
-        body: { type: 'string' },
-        confirmed: { type: 'boolean' },
-      },
-      required: ['contactId', 'noteId', 'body'],
-    },
-    async run({ contactId, noteId, body }) {
-      await ghl.updateNote(contactId, noteId, body);
-      return { ok: true, contactId, noteId, updated: true };
-    },
-  },
-  {
-    name: 'delete_note',
-    write: true,
-    description: 'Delete a note from a contact. Set confirmed=true ONLY after the user approves.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        contactId: { type: 'string' },
-        noteId: { type: 'string' },
-        confirmed: { type: 'boolean' },
-      },
-      required: ['contactId', 'noteId'],
-    },
-    async run({ contactId, noteId }) {
-      await ghl.deleteNote(contactId, noteId);
-      return { ok: true, contactId, noteId, deleted: true };
+      return { ok: true, contactId, note: body };
     },
   },
   {
     name: 'create_task',
     write: true,
-    description: 'Create a task for a contact. fields: title (required), body, dueDate (ISO), completed (bool), assignedTo (userId). Set confirmed=true ONLY after the user approves.',
+    description: 'Create a task on a contact. fields: title (required), body, dueDate (ISO date), assignedTo (user id), completed. Set confirmed=true ONLY after the user approves.',
     input_schema: {
       type: 'object',
       properties: {
         contactId: { type: 'string' },
-        fields: { type: 'object' },
+        fields: { type: 'object', description: 'e.g. {"title":"Call lead","dueDate":"2026-06-20T15:00:00Z","assignedTo":"<userId>"}' },
         confirmed: { type: 'boolean' },
       },
       required: ['contactId', 'fields'],
     },
     async run({ contactId, fields }) {
       const task = await ghl.createTask(contactId, fields);
-      return { ok: true, contactId, taskId: task.id || null };
+      return { ok: true, contactId, taskId: task.id || null, fields };
     },
   },
   {
@@ -434,72 +454,64 @@ const tools = [
     },
   },
   {
-    name: 'delete_task',
-    write: true,
-    description: 'Delete a task from a contact. Set confirmed=true ONLY after the user approves.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        contactId: { type: 'string' },
-        taskId: { type: 'string' },
-        confirmed: { type: 'boolean' },
-      },
-      required: ['contactId', 'taskId'],
-    },
-    async run({ contactId, taskId }) {
-      await ghl.deleteTask(contactId, taskId);
-      return { ok: true, contactId, taskId, deleted: true };
-    },
-  },
-  {
-    name: 'delete_opportunity',
-    write: true,
-    description: 'Delete an opportunity by id (irreversible). Set confirmed=true ONLY after the user approves.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        opportunityId: { type: 'string' },
-        confirmed: { type: 'boolean' },
-      },
-      required: ['opportunityId'],
-    },
-    async run({ opportunityId }) {
-      await ghl.deleteOpportunity(opportunityId);
-      return { ok: true, opportunityId, deleted: true };
-    },
-  },
-  {
-    name: 'delete_contact',
-    write: true,
-    description: 'Delete a contact by id (IRREVERSIBLE; also removes their opportunities). Be extra cautious and make the user confirm explicitly. Set confirmed=true ONLY after the user approves.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        contactId: { type: 'string' },
-        confirmed: { type: 'boolean' },
-      },
-      required: ['contactId'],
-    },
-    async run({ contactId }) {
-      await ghl.deleteContact(contactId);
-      return { ok: true, contactId, deleted: true };
-    },
-  },
-  {
     name: 'send_message',
     write: true,
-    description: 'Send an outbound message to a contact via GoHighLevel. fields: type ("SMS" or "Email"), contactId, message (SMS body or email text); for Email also subject and optionally html. Requires the contact to have a valid phone (SMS) or email (Email) and a configured sending channel. Set confirmed=true ONLY after the user approves.',
+    description: 'Send a message to a contact through GoHighLevel. For SMS: {type:"SMS", contactId, message}. For Email: {type:"Email", contactId, subject, message (or html)}. Set confirmed=true ONLY after the user approves.',
     input_schema: {
       type: 'object',
       properties: {
-        fields: { type: 'object' },
+        type: { type: 'string', description: 'SMS or Email' },
+        contactId: { type: 'string' },
+        message: { type: 'string', description: 'Text body (SMS) or email plain body' },
+        subject: { type: 'string', description: 'Email subject (Email only)' },
+        html: { type: 'string', description: 'Optional HTML body (Email only)' },
         confirmed: { type: 'boolean' },
       },
-      required: ['fields'],
+      required: ['type', 'contactId'],
     },
-    async run({ fields }) {
+    async run({ confirmed, ...fields }) {
       const result = await ghl.sendMessage(fields);
-      return { ok: true, messageId: result.messageId || result.id || null, type: fields.type };
+      return { ok: true, sent: fields.type, contactId: fields.contactId, result };
+    },
+  },
+  {
+    name: 'book_appointment',
+    write: true,
+    description: 'Book an appointment for a contact. Needs calendarId (use list_calendars), contactId, startTime and endTime (ISO 8601). Optional: title, assignedUserId, appointmentStatus. Set confirmed=true ONLY after the user approves.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        calendarId: { type: 'string' },
+        contactId: { type: 'string' },
+        startTime: { type: 'string' },
+        endTime: { type: 'string' },
+        title: { type: 'string' },
+        assignedUserId: { type: 'string' },
+        appointmentStatus: { type: 'string' },
+        confirmed: { type: 'boolean' },
+      },
+      required: ['calendarId', 'contactId', 'startTime', 'endTime'],
+    },
+    async run({ confirmed, ...fields }) {
+      const result = await ghl.createAppointment(fields);
+      return { ok: true, appointmentId: result.id || (result.event && result.event.id) || null, result };
+    },
+  },
+  {
+    name: 'create_tag',
+    write: true,
+    description: 'Create a new tag at the location level. Set confirmed=true ONLY after the user approves.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        confirmed: { type: 'boolean' },
+      },
+      required: ['name'],
+    },
+    async run({ name }) {
+      const result = await ghl.createLocationTag(name);
+      return { ok: true, name, ...result };
     },
   },
 ];
