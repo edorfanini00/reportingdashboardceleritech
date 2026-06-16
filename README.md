@@ -132,19 +132,17 @@ npm run tag:sentbyjohn:apply    # actually applies the sentbyjhon tag
 On first run it prints a URL and a code — open the URL, sign in with **your**
 Microsoft 365 account, and the script continues automatically.
 
-### "Sync John" button (dashboard)
+### "Synced Jhon" tab (dashboard)
 
-The dashboard header has a **Sync John** button that runs the same flow server-side
-(`POST /api/sync-john`): it scans John's emails, then for each lead he shared it
+The **Synced Jhon** sidebar tab and **Sync John** button use a review-first workflow:
 
-- **creates new contacts** (not yet in the CRM) with an **opportunity** in the
-  **Enterpryze** pipeline → **ERP Qualified** stage, assigned to **Natalie**,
-  source **Enterpryze**, tagged **sentbyjhon**; and
-- for **existing contacts**, just ensures the **sentbyjhon** tag + **Enterpryze**
-  source (no duplicate opportunity).
+1. **Sync John** — scans John's emails and imports leads into a dashboard queue (no GoHighLevel writes).
+2. **Review** — pending leads show checkboxes. Contacts from the same company are flagged so you can pick the right one (avoids duplicate uploads).
+3. **Send Selected** — uploads only the leads you chose to GoHighLevel:
+   - **New contacts** → create contact + opportunity in **Enterpryze** / **ERP Qualified**, assigned to **Natalie**, source **Enterpryze**, tag **sentbyjhon**
+   - **Existing contacts** → tag + source only (no duplicate opportunity)
 
-Processed leads are tracked in Vercel KV, so repeat clicks only handle new ones.
-Large first runs are time-budgeted and may report "partial" — click again to finish.
+If there are no pending leads, the tab shows **No new contacts**.
 
 Because the deployed button can't do an interactive Microsoft login, seed a refresh
 token once: after a local login, copy `refresh_token` from `scripts/.ms-token.json`
