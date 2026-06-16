@@ -310,6 +310,19 @@ async function getContact(contactId) {
   return data.contact || data;
 }
 
+// Delete a contact by id (irreversible; also removes its opportunities).
+async function deleteContact(contactId) {
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`GHL delete contact failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+  return res.json().catch(() => ({}));
+}
+
 // List pipelines (with their stages).
 async function listPipelines() {
   const { locationId } = getCredentials();
@@ -368,5 +381,7 @@ module.exports = {
   addNote,
   createOpportunity,
   updateOpportunity,
+  deleteContact,
+  searchByTagEquals,
   normalizePhone,
 };

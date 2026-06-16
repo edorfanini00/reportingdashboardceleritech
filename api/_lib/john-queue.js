@@ -130,6 +130,14 @@ async function setInCrmFlags(flags) {
   if (changed) await kv.hset(QUEUE_KEY, map);
 }
 
+// Remove phone-only (no-email) entries — these were noise from random numbers.
+async function pruneNoEmail() {
+  const map = await getMap();
+  const drop = Object.values(map).filter(l => !l.email).map(l => l.id);
+  if (drop.length) await kv.hdel(QUEUE_KEY, ...drop);
+  return drop.length;
+}
+
 async function markSent(keys) {
   const map = await getMap();
   const now = new Date().toISOString();
@@ -168,6 +176,7 @@ module.exports = {
   mergeCandidates,
   updateLead,
   setInCrmFlags,
+  pruneNoEmail,
   markSent,
   annotateDuplicates,
 };

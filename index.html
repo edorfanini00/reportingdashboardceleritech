@@ -1033,6 +1033,7 @@ async function sendJohnKeys(keys) {
         let msg = 'Sent ' + (data.sent || 0) + ' lead(s) to GoHighLevel.';
         if (data.created) msg += ' ' + data.created + ' new contact(s) + opportunity created.';
         if (data.tagged) msg += ' ' + data.tagged + ' existing contact(s) tagged.';
+        if (data.skipped && data.skipped.length) msg += ' ' + data.skipped.length + ' skipped (add a name first).';
         if (data.errors && data.errors.length) msg += ' ' + data.errors.length + ' error(s).';
         showGhlBanner(msg);
         keys.forEach(k => johnSelectedKeys.delete(k));

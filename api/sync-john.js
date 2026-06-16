@@ -72,7 +72,10 @@ async function handleSync() {
   const token = await getAccessToken();
   const messages = await fetchMessagesFromSender(token, process.env.JOHN_EMAIL, { max: 2000 });
   const all = extractFromMessages(messages);
-  const candidates = all.filter(c => !isExcluded(c));
+  // Require an email — phone-only matches are noise (random numbers in signatures).
+  const candidates = all.filter(c => !isExcluded(c) && c.email);
+  // Drop any phone-only junk that a previous version may have stored.
+  await johnQueue.pruneNoEmail();
 
   // One-time carry-over: leads auto-synced before the review queue existed.
   let legacySentKeys = null;
@@ -108,12 +111,13 @@ async function handleSend(keys) {
   await ghl.createLocationTag(TAG).catch(() => {});
 
   const map = await johnQueue.getMap();
-  const summary = { tagged: 0, created: 0, opportunities: 0, sent: 0, errors: [] };
+  const summary = { tagged: 0, created: 0, opportunities: 0, sent: 0, skipped: [], errors: [] };
   const sentKeys = [];
 
   for (const key of keys) {
     const c = map[key];
     if (!c || c.status === 'sent') continue;
+    const hasName = !!((c.name || '').trim());
     const pipelineId = c.pipelineId || DEFAULTS.pipelineId;
     const stageId = c.stageId || DEFAULTS.stageId;
     const assignedTo = c.assignedTo || DEFAULTS.assignedTo;
@@ -134,6 +138,11 @@ async function handleSend(keys) {
         });
         summary.tagged++;
       } else {
+        // Don't create nameless contacts — make the user add a name first.
+        if (!hasName) {
+          summary.skipped.push({ key, reason: 'needs a name' });
+          continue;
+        }
         const [firstName, ...rest] = (c.name || '').split(' ');
         const created = await ghl.createContact({
           firstName: firstName || undefined,
