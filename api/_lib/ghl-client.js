@@ -345,6 +345,240 @@ async function listUsers() {
   return data.users || data.data || [];
 }
 
+// --- Workflows (read + enroll/remove only; GHL has no API to BUILD workflows) ---
+
+// List the location's existing workflows (id + name + status).
+async function listWorkflows() {
+  const { locationId } = getCredentials();
+  const res = await fetch(`${GHL_BASE}/workflows/?locationId=${locationId}`, { headers: authHeaders() });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL workflows failed (${res.status}): ${text.slice(0, 300)}`);
+  let data = {};
+  try { data = JSON.parse(text); } catch { /* noop */ }
+  return data.workflows || data.data || [];
+}
+
+// Enroll a contact into an existing workflow (this is how the API "triggers" automations).
+async function addContactToWorkflow(contactId, workflowId, eventStartTime) {
+  const payload = {};
+  if (eventStartTime) payload.eventStartTime = eventStartTime;
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/workflow/${workflowId}`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL add to workflow failed (${res.status}): ${text.slice(0, 300)}`);
+  try { return JSON.parse(text); } catch { return {}; }
+}
+
+// Remove a contact from a workflow.
+async function removeContactFromWorkflow(contactId, workflowId) {
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/workflow/${workflowId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL remove from workflow failed (${res.status}): ${text.slice(0, 300)}`);
+  try { return JSON.parse(text); } catch { return {}; }
+}
+
+// --- Notes ---
+
+async function listNotes(contactId) {
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/notes`, { headers: authHeaders() });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL list notes failed (${res.status}): ${text.slice(0, 300)}`);
+  let data = {};
+  try { data = JSON.parse(text); } catch { /* noop */ }
+  return data.notes || data.data || [];
+}
+
+async function updateNote(contactId, noteId, body, userId) {
+  const payload = { body };
+  if (userId) payload.userId = userId;
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/notes/${noteId}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL update note failed (${res.status}): ${text.slice(0, 300)}`);
+  try { return JSON.parse(text); } catch { return {}; }
+}
+
+async function deleteNote(contactId, noteId) {
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/notes/${noteId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL delete note failed (${res.status}): ${text.slice(0, 300)}`);
+  try { return JSON.parse(text); } catch { return {}; }
+}
+
+// --- Tasks ---
+
+async function listTasks(contactId) {
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/tasks`, { headers: authHeaders() });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL list tasks failed (${res.status}): ${text.slice(0, 300)}`);
+  let data = {};
+  try { data = JSON.parse(text); } catch { /* noop */ }
+  return data.tasks || data.data || [];
+}
+
+// fields: { title, body, dueDate (ISO), completed (bool), assignedTo }
+async function createTask(contactId, fields) {
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/tasks`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(fields),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL create task failed (${res.status}): ${text.slice(0, 300)}`);
+  let data = {};
+  try { data = JSON.parse(text); } catch { /* noop */ }
+  return data.task || data;
+}
+
+async function updateTask(contactId, taskId, fields) {
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/tasks/${taskId}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(fields),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL update task failed (${res.status}): ${text.slice(0, 300)}`);
+  try { return JSON.parse(text); } catch { return {}; }
+}
+
+async function deleteTask(contactId, taskId) {
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/tasks/${taskId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL delete task failed (${res.status}): ${text.slice(0, 300)}`);
+  try { return JSON.parse(text); } catch { return {}; }
+}
+
+// --- Opportunities (search / get / delete; create + update already above) ---
+
+// params may include: query, pipelineId, pipelineStageId, contactId, status, assignedTo, limit
+async function searchOpportunities(params = {}) {
+  const { locationId } = getCredentials();
+  const qs = new URLSearchParams({ location_id: locationId });
+  if (params.query) qs.set('q', params.query);
+  if (params.pipelineId) qs.set('pipeline_id', params.pipelineId);
+  if (params.pipelineStageId) qs.set('pipeline_stage_id', params.pipelineStageId);
+  if (params.contactId) qs.set('contact_id', params.contactId);
+  if (params.status) qs.set('status', params.status);
+  if (params.assignedTo) qs.set('assigned_to', params.assignedTo);
+  qs.set('limit', String(params.limit || 20));
+  const res = await fetch(`${GHL_BASE}/opportunities/search?${qs.toString()}`, { headers: authHeaders() });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL opp search failed (${res.status}): ${text.slice(0, 300)}`);
+  let data = {};
+  try { data = JSON.parse(text); } catch { /* noop */ }
+  return data.opportunities || data.data || [];
+}
+
+async function getOpportunity(opportunityId) {
+  const res = await fetch(`${GHL_BASE}/opportunities/${opportunityId}`, { headers: authHeaders() });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL get opp failed (${res.status}): ${text.slice(0, 300)}`);
+  let data = {};
+  try { data = JSON.parse(text); } catch { /* noop */ }
+  return data.opportunity || data;
+}
+
+async function deleteOpportunity(opportunityId) {
+  const res = await fetch(`${GHL_BASE}/opportunities/${opportunityId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL delete opp failed (${res.status}): ${text.slice(0, 300)}`);
+  try { return JSON.parse(text); } catch { return {}; }
+}
+
+// --- Calendars / appointments ---
+
+async function listCalendars() {
+  const { locationId } = getCredentials();
+  const res = await fetch(`${GHL_BASE}/calendars/?locationId=${locationId}`, { headers: authHeaders() });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL calendars failed (${res.status}): ${text.slice(0, 300)}`);
+  let data = {};
+  try { data = JSON.parse(text); } catch { /* noop */ }
+  return data.calendars || data.data || [];
+}
+
+async function listAppointments(contactId) {
+  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/appointments`, { headers: authHeaders() });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL appointments failed (${res.status}): ${text.slice(0, 300)}`);
+  let data = {};
+  try { data = JSON.parse(text); } catch { /* noop */ }
+  return data.events || data.appointments || data.data || [];
+}
+
+// --- Conversations / messaging ---
+
+async function searchConversations(params = {}) {
+  const { locationId } = getCredentials();
+  const qs = new URLSearchParams({ locationId });
+  if (params.contactId) qs.set('contactId', params.contactId);
+  if (params.query) qs.set('query', params.query);
+  qs.set('limit', String(params.limit || 20));
+  const res = await fetch(`${GHL_BASE}/conversations/search?${qs.toString()}`, { headers: authHeaders() });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL conversation search failed (${res.status}): ${text.slice(0, 300)}`);
+  let data = {};
+  try { data = JSON.parse(text); } catch { /* noop */ }
+  return data.conversations || data.data || [];
+}
+
+// Send an outbound message to a contact. type: 'SMS' | 'Email' | 'WhatsApp' | etc.
+// For Email also pass subject/html or message. For SMS pass message.
+async function sendMessage(fields) {
+  const res = await fetch(`${GHL_BASE}/conversations/messages`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(fields),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL send message failed (${res.status}): ${text.slice(0, 400)}`);
+  try { return JSON.parse(text); } catch { return {}; }
+}
+
+// --- Custom fields / tags (location level) ---
+
+// List custom field definitions as an array (id, name, fieldKey, dataType, options).
+async function listCustomFields() {
+  const { token, locationId } = getCredentials();
+  const res = await fetch(`${GHL_BASE}/locations/${locationId}/customFields`, {
+    headers: { Authorization: `Bearer ${token}`, Version: '2021-07-28', Accept: 'application/json' },
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL customFields failed (${res.status}): ${text.slice(0, 300)}`);
+  let data = {};
+  try { data = JSON.parse(text); } catch { /* noop */ }
+  return data.customFields || data.customField || data.data || [];
+}
+
+// List all tags defined at the location.
+async function listLocationTags() {
+  const { locationId } = getCredentials();
+  const res = await fetch(`${GHL_BASE}/locations/${locationId}/tags`, { headers: authHeaders() });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GHL list tags failed (${res.status}): ${text.slice(0, 300)}`);
+  let data = {};
+  try { data = JSON.parse(text); } catch { /* noop */ }
+  return data.tags || data.data || [];
+}
+
 // Build a frequency map of all tag names seen, preserving original casing.
 function collectTagSamples(contacts) {
   const counts = {};
@@ -384,4 +618,30 @@ module.exports = {
   deleteContact,
   searchByTagEquals,
   normalizePhone,
+  // workflows
+  listWorkflows,
+  addContactToWorkflow,
+  removeContactFromWorkflow,
+  // notes
+  listNotes,
+  updateNote,
+  deleteNote,
+  // tasks
+  listTasks,
+  createTask,
+  updateTask,
+  deleteTask,
+  // opportunities
+  searchOpportunities,
+  getOpportunity,
+  deleteOpportunity,
+  // calendars / appointments
+  listCalendars,
+  listAppointments,
+  // conversations / messaging
+  searchConversations,
+  sendMessage,
+  // metadata
+  listCustomFields,
+  listLocationTags,
 };
