@@ -54,8 +54,9 @@ module.exports = async function handler(req, res) {
   if (!process.env.JOHN_EMAIL) { res.status(500).json({ ok: false, error: 'JOHN_EMAIL not set.' }); return; }
   if (!process.env.KV_REST_API_URL) { res.status(500).json({ ok: false, error: 'KV not configured (needed to track processed leads).' }); return; }
 
+  const preview = String((req.query && req.query.preview) || '') === '1';
   const started = Date.now();
-  const summary = { fetchedEmails: 0, candidates: 0, alreadyDone: 0, tagged: 0, created: 0, opportunities: 0, skippedInternal: 0, errors: [], partial: false, remaining: 0 };
+  const summary = { preview, fetchedEmails: 0, candidates: 0, alreadyDone: 0, tagged: 0, created: 0, opportunities: 0, skippedInternal: 0, errors: [], partial: false, remaining: 0 };
 
   try {
     const token = await getAccessToken();
@@ -69,12 +70,21 @@ module.exports = async function handler(req, res) {
 
     const processed = (await kv.hgetall(PROCESSED_KEY)) || {};
 
-    await ghl.createLocationTag(TAG).catch(() => {});
-
     const pending = candidates.filter(c => {
       const key = c.email || c.phone;
       return key && !processed[key];
     });
+    summary.alreadyDone = candidates.length - pending.length;
+
+    // Preview: authenticate + read mailbox, report counts, no GHL writes.
+    if (preview) {
+      summary.newLeads = pending.length;
+      summary.sampleNew = pending.slice(0, 10).map(c => ({ name: c.name || '', email: c.email || '', phone: c.phone || '', company: c.company || '' }));
+      res.status(200).json({ ok: true, ...summary });
+      return;
+    }
+
+    await ghl.createLocationTag(TAG).catch(() => {});
 
     let i = 0;
     for (; i < pending.length; i++) {
@@ -121,7 +131,6 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    summary.alreadyDone = candidates.length - pending.length;
     summary.remaining = summary.partial ? (pending.length - i) : 0;
     res.status(200).json({ ok: true, ...summary });
   } catch (err) {
