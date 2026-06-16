@@ -1100,8 +1100,11 @@ function renderSyncedJohn(data) {
         if (l.isDuplicateCompany) {
             badges += '<span class="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 shrink-0">Same company (' + l.sameCompanyCount + ')</span>';
         }
-        if (l.inCrm) {
-            badges += '<span class="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 shrink-0">In CRM</span>';
+        // Action hint: what Send will do (independent of whether we already sent it).
+        if (l.inCrm === true) {
+            badges += '<span class="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 shrink-0" title="This contact already exists in GoHighLevel \u2014 Send will only add the tag + source, no duplicate.">Tag only</span>';
+        } else if (l.inCrm === false) {
+            badges += '<span class="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0" title="Not found in GoHighLevel \u2014 Send will create a new contact + opportunity.">Will create</span>';
         }
         const dest = '<span class="text-[10px] font-semibold text-slate-400">' + escapeHtml(pipelineLabel(l)) + '</span>';
         return '<div class="flex items-center gap-3 px-4 py-3 rounded-2xl border ' + (l.isDuplicateCompany ? 'border-violet-200 bg-violet-50/30' : 'border-amber-200 bg-amber-50/40') + ' shadow-sm hover:border-indigo-300 transition-colors">'
@@ -1130,7 +1133,7 @@ function renderSyncedJohn(data) {
     html += '<div class="mb-5">';
     html += '<h4 class="text-[11px] font-black uppercase tracking-widest text-amber-600 mb-2">Pending review</h4>';
     if (pending.length) {
-        html += '<p class="text-[11px] text-slate-400 mb-3">Select the leads you want, then click <strong>Send Selected</strong>. Contacts from the same company are flagged so you can pick the right one.</p>';
+        html += '<p class="text-[11px] text-slate-400 mb-3">Select the leads you want, then click <strong>Send Selected</strong>. <span class="text-emerald-600 font-semibold">Will create</span> = new contact + opportunity. <span class="text-sky-600 font-semibold">Tag only</span> = already exists in GoHighLevel, so we just add the tag (no duplicate). Already-uploaded leads appear under <strong>Already sent</strong> below.</p>';
         html += '<div class="space-y-2">' + pending.map(pendingRow).join('') + '</div>';
     } else {
         html += '<div class="text-center text-slate-400 text-sm py-6 bg-slate-50/60 rounded-2xl border border-slate-100">No new contacts</div>';
