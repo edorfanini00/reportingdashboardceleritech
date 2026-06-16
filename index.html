@@ -424,7 +424,7 @@ function showFunnelLeads(type) {
 
 let summaryChart = null;
 let currentViewData = null;
-const allWeeksInOrder = ['feb-23','mar-02','mar-09','mar-16','mar-23','mar-30','apr-06','apr-13','apr-20','apr-27','may-04','may-11','may-18','may-25','jun-01','jun-08','jun-15'];
+const allWeeksInOrder = ['feb-23','mar-02','mar-09','mar-16','mar-23','mar-30','apr-06','apr-13','apr-20','apr-27','may-04','may-11','may-18','may-24','may-31','jun-07','jun-14'];
 
 const leadsByWeek = {
 'may-18': [
@@ -511,10 +511,10 @@ const leadsByWeek = {
 ]
 };
 const weeklyData = {
-'jun-15': { outreachTotal:77, outreachBreakdown:"Enterpryze: 45 | Food: 8 | ERP: 24", pipelineCount:3, dateRange:"Jun 15 - 21", chartLabels:['Jun 15','Jun 16','Jun 17','Jun 18','Jun 19','Jun 20','Jun 21'], chartValues:[1,2,0,0,0,0,0], entSent:45, entOpen:"33.3%", entClick:"0%", entReply:"0%", foodSent:8, foodOpen:"37.5%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:24, erpOpen:"29.2%", erpClick:"0%", erpReply:"4.2%" },
-'jun-08': { outreachTotal:213, outreachBreakdown:"Enterpryze: 120 | Food: 21 | ERP: 72", pipelineCount:7, dateRange:"Jun 08 - 14", chartLabels:['Jun 08','Jun 09','Jun 10','Jun 11','Jun 12','Jun 13','Jun 14'], chartValues:[2,0,1,3,1,0,0], entSent:120, entOpen:"37.5%", entClick:"0%", entReply:"0%", foodSent:21, foodOpen:"52.38%", foodClick:"4.76%", foodReply:"0%", foodLabel:"Email Sent", erpSent:72, erpOpen:"29.2%", erpClick:"0%", erpReply:"5%" },
-'jun-01': { outreachTotal:203, outreachBreakdown:"Enterpryze: 120 | Food: 17 | ERP: 66", pipelineCount:7, dateRange:"Jun 01 - 07", chartLabels:['Jun 01','Jun 02','Jun 03','Jun 04','Jun 05','Jun 06','Jun 07'], chartValues:[0,1,2,1,0,2,1], entSent:120, entOpen:"35%", entClick:"0%", entReply:"0%", foodSent:17, foodOpen:"47.06%", foodClick:"5.88%", foodReply:"0%", foodLabel:"Email Sent", erpSent:66, erpOpen:"30.3%", erpClick:"0%", erpReply:"4.5%" },
-'may-25': { outreachTotal:209, outreachBreakdown:"Enterpryze: 120 | Food: 19 | ERP: 70", pipelineCount:8, dateRange:"May 25 - 31", chartLabels:['May 25','May 26','May 27','May 28','May 29','May 30','May 31'], chartValues:[1,2,0,1,3,0,1], entSent:120, entOpen:"36.4%", entClick:"0%", entReply:"0%", foodSent:19, foodOpen:"42.1%", foodClick:"5.26%", foodReply:"0%", foodLabel:"Email Sent", erpSent:70, erpOpen:"31.4%", erpClick:"0%", erpReply:"4.3%" },
+'jun-14': { outreachTotal:77, outreachBreakdown:"Enterpryze: 45 | Food: 8 | ERP: 24", pipelineCount:3, dateRange:"Jun 14 - 20", chartLabels:['Jun 14','Jun 15','Jun 16','Jun 17','Jun 18','Jun 19','Jun 20'], chartValues:[0,1,2,0,0,0,0], entSent:45, entOpen:"33.3%", entClick:"0%", entReply:"0%", foodSent:8, foodOpen:"37.5%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:24, erpOpen:"29.2%", erpClick:"0%", erpReply:"4.2%" },
+'jun-07': { outreachTotal:213, outreachBreakdown:"Enterpryze: 120 | Food: 21 | ERP: 72", pipelineCount:7, dateRange:"Jun 07 - 13", chartLabels:['Jun 07','Jun 08','Jun 09','Jun 10','Jun 11','Jun 12','Jun 13'], chartValues:[2,0,1,3,1,0,0], entSent:120, entOpen:"37.5%", entClick:"0%", entReply:"0%", foodSent:21, foodOpen:"52.38%", foodClick:"4.76%", foodReply:"0%", foodLabel:"Email Sent", erpSent:72, erpOpen:"29.2%", erpClick:"0%", erpReply:"5%" },
+'may-31': { outreachTotal:203, outreachBreakdown:"Enterpryze: 120 | Food: 17 | ERP: 66", pipelineCount:7, dateRange:"May 31 - Jun 06", chartLabels:['May 31','Jun 01','Jun 02','Jun 03','Jun 04','Jun 05','Jun 06'], chartValues:[0,1,2,1,0,2,1], entSent:120, entOpen:"35%", entClick:"0%", entReply:"0%", foodSent:17, foodOpen:"47.06%", foodClick:"5.88%", foodReply:"0%", foodLabel:"Email Sent", erpSent:66, erpOpen:"30.3%", erpClick:"0%", erpReply:"4.5%" },
+'may-24': { outreachTotal:209, outreachBreakdown:"Enterpryze: 120 | Food: 19 | ERP: 70", pipelineCount:8, dateRange:"May 24 - 30", chartLabels:['May 24','May 25','May 26','May 27','May 28','May 29','May 30'], chartValues:[1,2,0,1,3,0,1], entSent:120, entOpen:"36.4%", entClick:"0%", entReply:"0%", foodSent:19, foodOpen:"42.1%", foodClick:"5.26%", foodReply:"0%", foodLabel:"Email Sent", erpSent:70, erpOpen:"31.4%", erpClick:"0%", erpReply:"4.3%" },
 'may-18': { outreachTotal:208, outreachBreakdown:"Enterpryze: 120 | Food: 20 | ERP: 68", pipelineCount:9, dateRange:"May 18 - 24", chartLabels:['May 18','May 19','May 20','May 21','May 22','May 23','May 24'], chartValues:[1,1,2,0,1,2,0], entSent:120, entOpen:"37.2%", entClick:"0%", entReply:"0%", foodSent:20, foodOpen:"47.5%", foodClick:"5%", foodReply:"0%", foodLabel:"Email Sent", erpSent:68, erpOpen:"30.9%", erpClick:"0%", erpReply:"4.4%" },
 'may-11': { outreachTotal:138, outreachBreakdown:"Enterpryze: 120 | Food: 18 | ERP: 0", pipelineCount:11, dateRange:"May 11 - 17", chartLabels:['May 11','May 12','May 13','May 14','May 15','May 16','May 17'], chartValues:[0,3,1,4,0,0,2], entSent:120, entOpen:"36.7%", entClick:"0%", entReply:"0%", foodSent:18, foodOpen:"11.11%", foodClick:"5.56%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
 'may-04': { outreachTotal:120, outreachBreakdown:"Enterpryze: 120 | Food: 0 | ERP: 0", pipelineCount:3, dateRange:"May 04 - 10", chartLabels:['May 04','May 05','May 06','May 07','May 08','May 09','May 10'], chartValues:[0,1,0,1,0,0,1], entSent:120, entOpen:"35.8%", entClick:"0%", entReply:"0%", foodSent:0, foodOpen:"0%", foodClick:"0%", foodReply:"0%", foodLabel:"Email Sent", erpSent:0, erpOpen:"0%", erpClick:"0%", erpReply:"0%" },
@@ -890,21 +890,24 @@ function weekSortKey(k) {
     return (idx < 0 ? 0 : idx) * 100 + parseInt(day, 10);
 }
 function ensureWeekBucket(key, weekStart) {
-    if (leadsByWeek[key]) return;
-    const labels = [], values = [];
-    for (let i = 0; i < 7; i++) {
-        const d = new Date(Date.UTC(weekStart.getUTCFullYear(), weekStart.getUTCMonth(), weekStart.getUTCDate() + i));
-        labels.push(GHL_MONTHS[d.getUTCMonth()] + ' ' + ghlPad2(d.getUTCDate()));
-        values.push(0);
+    if (!leadsByWeek[key]) leadsByWeek[key] = [];
+    // Preserve any pre-existing week (e.g. hardcoded email metrics) so a lead
+    // sync only adds leads and never wipes the outreach/email numbers.
+    if (!weeklyData[key]) {
+        const labels = [], values = [];
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(Date.UTC(weekStart.getUTCFullYear(), weekStart.getUTCMonth(), weekStart.getUTCDate() + i));
+            labels.push(GHL_MONTHS[d.getUTCMonth()] + ' ' + ghlPad2(d.getUTCDate()));
+            values.push(0);
+        }
+        weeklyData[key] = {
+            outreachTotal: 0, outreachBreakdown: 'Enterpryze: 0 | Food: 0 | ERP: 0', pipelineCount: 0,
+            dateRange: ghlWeekRangeLabel(weekStart), chartLabels: labels, chartValues: values,
+            entSent: 0, entOpen: '0%', entClick: '0%', entReply: '0%',
+            foodSent: 0, foodOpen: '0%', foodClick: '0%', foodReply: '0%', foodLabel: 'Email Sent',
+            erpSent: 0, erpOpen: '0%', erpClick: '0%', erpReply: '0%'
+        };
     }
-    leadsByWeek[key] = [];
-    weeklyData[key] = {
-        outreachTotal: 0, outreachBreakdown: 'Enterpryze: 0 | Food: 0 | ERP: 0', pipelineCount: 0,
-        dateRange: ghlWeekRangeLabel(weekStart), chartLabels: labels, chartValues: values,
-        entSent: 0, entOpen: '0%', entClick: '0%', entReply: '0%',
-        foodSent: 0, foodOpen: '0%', foodClick: '0%', foodReply: '0%', foodLabel: 'Email Sent',
-        erpSent: 0, erpOpen: '0%', erpClick: '0%', erpReply: '0%'
-    };
     if (!allWeeksInOrder.includes(key)) {
         allWeeksInOrder.push(key);
         allWeeksInOrder.sort((a, b) => weekSortKey(a) - weekSortKey(b));
