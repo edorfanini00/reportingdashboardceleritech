@@ -9,7 +9,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // name, so gating questions like "Do you have an estimated budget?" are ignored.
 const DETAIL_FIELDS = {
   companyDesc: {
-    meta: ['which best describes your company', 'company description', 'what industry do you operate in'],
+    meta: ['which best describes your company', 'company description', 'what industry do you operate in', 'organization type', 'organization type oil and gas'],
     fda: ['company description fda', 'which best describes your company'],
   },
   challenge: {
@@ -17,11 +17,11 @@ const DETAIL_FIELDS = {
     fda: ['biggest compliance concern', 'what is your biggest operational challenge right now'],
   },
   software: {
-    meta: ['do you currently use any software to manage production inventory or logistics', 'do you currently use any software'],
+    meta: ['do you currently use any software to manage production inventory or logistics', 'do you currently use any software', 'current software oil', 'current software oil and gas', 'what software are you currently using'],
     fda: ['how they are currently managing compliance records', 'do you currently use any software'],
   },
   timeline: {
-    meta: ['timeline'],
+    meta: ['timeline', 'timeline oil and gas'],
     fda: ['timeline fda', 'timeline'],
   },
   budget: {
@@ -29,11 +29,11 @@ const DETAIL_FIELDS = {
     fda: ['budget'],
   },
   employees: {
-    meta: ['number of employees', 'how many employees are working in the company'],
+    meta: ['number of employees', 'how many employees are working in the company', 'number of entities'],
     fda: ['number of employees fda', 'number of employees'],
   },
   role: {
-    meta: ['role in the company', 'role'],
+    meta: ['role in the company', 'role', 'role in the company oil and gas'],
     fda: ['role fda', 'role in the company', 'role'],
   },
   website: {
@@ -72,16 +72,18 @@ function normalizeTags(raw) {
 }
 
 // Meta-sourced leads in GoHighLevel are tagged "meta lead" / "meta lead fda"
-// (and an "fda" tag). Any tag containing "meta" or "fda" qualifies.
+// (and an "fda" tag). Oil & gas campaign leads carry "oil and gas" /
+// "meta oil and gas lead". Any tag containing "meta", "fda" or "oil" qualifies.
 function hasQualifyingTag(tags) {
   const normalized = normalizeTags(tags);
-  return normalized.some(t => t.includes('meta') || t.includes('fda'));
+  return normalized.some(t => t.includes('meta') || t.includes('fda') || t.includes('oil'));
 }
 
-// Returns 'FDA' / 'Food Manufacturer' / 'Meta Lead' / 'General' based on tags.
+// Returns 'FDA' / 'Food Manufacturer' / 'Oil & Gas' / 'Meta Lead' / 'General'.
 function pipelineFromTags(tags) {
   const normalized = normalizeTags(tags);
   const has = (s) => normalized.some(t => t.includes(s));
+  if (has('oil')) return 'Oil & Gas';
   if (has('fda')) return 'FDA';
   if (has('food manufacturer')) return 'Food Manufacturer';
   if (has('meta')) return 'Meta Lead';
