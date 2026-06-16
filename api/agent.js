@@ -4,7 +4,7 @@ const { ghlConfigured } = require('./_lib/ghl-client');
 const { anthropicTools, runTool } = require('./_lib/agent-tools');
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest';
+const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 const MAX_STEPS = 10;
 
 const SYSTEM_PROMPT = `You are the CeleriTech CRM assistant, embedded in a GoHighLevel marketing dashboard.

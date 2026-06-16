@@ -82,7 +82,7 @@ To enable it, add to Vercel → Settings → Environment Variables:
 | Variable | Description |
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | Anthropic API key (required for the assistant) |
-| `ANTHROPIC_MODEL` | Optional, defaults to `claude-3-5-sonnet-latest` |
+| `ANTHROPIC_MODEL` | Optional, defaults to `claude-sonnet-4-6` |
 
 It reuses the existing `GHL_API_KEY` / `GHL_LOCATION_ID` for all CRM actions.
 
