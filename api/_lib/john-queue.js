@@ -56,19 +56,24 @@ function normalizeLead(c, existing) {
       sentAt: null,
     };
   }
-  // Preserve user-edited values; only backfill empties from fresh extraction.
+  // If the user manually edited this record, never overwrite — only backfill
+  // blanks. Otherwise prefer the (improved) fresh extraction, falling back to
+  // the stored value when fresh is empty.
+  const pick = existing.edited
+    ? (field) => existing[field] || fresh[field]
+    : (field) => fresh[field] || existing[field];
   return {
     ...existing,
-    name: existing.edited ? existing.name : (existing.name || fresh.name),
-    phone: existing.phone || fresh.phone,
-    company: existing.company || fresh.company,
-    title: existing.title || fresh.title,
-    website: existing.website || fresh.website,
-    address1: existing.address1 || fresh.address1,
-    city: existing.city || fresh.city,
-    state: existing.state || fresh.state,
-    postalCode: existing.postalCode || fresh.postalCode,
-    notes: existing.notes || fresh.notes,
+    name: pick('name'),
+    phone: pick('phone'),
+    company: pick('company'),
+    title: pick('title'),
+    website: pick('website'),
+    address1: pick('address1'),
+    city: pick('city'),
+    state: pick('state'),
+    postalCode: pick('postalCode'),
+    notes: pick('notes'),
     companyKey: existing.companyKey || fresh.companyKey,
     isNew: false,
     discoveredAt: existing.discoveredAt || now,

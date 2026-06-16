@@ -63,6 +63,20 @@ function guessCompanyNear(text, index, emailDomain) {
   return '';
 }
 
+// Expand to the contact "block" — the paragraph bounded by blank lines around
+// the email. John writes labeled fields (Contact/Title/Company/Address/Phone)
+// on separate lines with the email at the bottom, so we need the whole block.
+function blockAround(text, index, len) {
+  const before = text.slice(0, index);
+  const after = text.slice(index + len);
+  const bMatches = [...before.matchAll(/\n[ \t]*\n/g)];
+  const last = bMatches.length ? bMatches[bMatches.length - 1] : null;
+  const start = last ? last.index + last[0].length : Math.max(0, index - 400);
+  const aMatch = after.match(/\n[ \t]*\n/);
+  const end = aMatch ? index + len + aMatch.index : Math.min(text.length, index + len + 200);
+  return text.slice(start, end);
+}
+
 // Grab a few lines of context around a position — this is the most useful raw
 // material for the GHL note, since John writes free-text detail near each lead.
 function snippetAround(text, index, len) {
@@ -98,8 +112,8 @@ function parseAddress(window) {
   const raw = labeled || (window.match(ADDR_RE) || [])[0] || '';
   if (!raw) return {};
   const out = { address1: raw.trim() };
-  // City, ST ZIP
-  const m = raw.match(/,\s*([A-Za-z .'\-]{2,40}),\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)/);
+  // City, ST ZIP  (ZIP allowed 4-5 digits since John's emails sometimes typo them)
+  const m = raw.match(/,\s*([A-Za-z .'\-]{2,40}),\s*([A-Z]{2})\s*(\d{4,5}(?:-\d{4})?)/);
   if (m) {
     out.city = m[1].trim();
     out.state = m[2].trim();
@@ -127,18 +141,25 @@ function extractFromBody(text, meta = {}) {
     if (seenEmails.has(email)) continue;
     seenEmails.add(email);
 
-    const win = text.slice(Math.max(0, m.index - 160), m.index + 200);
+    const block = blockAround(text, m.index, m[0].length);
     const tail = text.slice(m.index + m[0].length, m.index + m[0].length + 60);
-    const phoneNear = (tail.match(PHONE_RE) || [])[0] || (win.match(PHONE_RE) || [])[0];
-    const websiteMatch = win.match(URL_RE);
-    const addr = parseAddress(win);
+
+    // Prefer explicitly labeled fields from John's block format.
+    const nameLabeled = labeledField(block, ['contact', 'name', 'attn', 'contacto', 'nombre']);
+    const companyLabeled = labeledField(block, ['company', 'business', 'organization', 'org', 'firm', 'empresa']);
+    const phoneLabeled = labeledField(block, ['phone', 'tel', 'telephone', 'mobile', 'cell', 'telefono', 'teléfono']);
+    const phoneNear = (String(phoneLabeled).match(PHONE_RE) || [])[0]
+      || (tail.match(PHONE_RE) || [])[0]
+      || (block.match(PHONE_RE) || [])[0];
+    const websiteMatch = block.match(URL_RE);
+    const addr = parseAddress(block);
 
     found.push({
       email,
       phone: phoneNear ? normalizePhone(phoneNear) : '',
-      name: guessNameNear(text, m.index),
-      company: guessCompanyNear(text, m.index, domain),
-      title: guessTitleNear(win),
+      name: nameLabeled || guessNameNear(text, m.index),
+      company: companyLabeled || guessCompanyNear(text, m.index, domain),
+      title: guessTitleNear(block),
       website: websiteMatch ? websiteMatch[0] : '',
       address1: addr.address1 || '',
       city: addr.city || '',
