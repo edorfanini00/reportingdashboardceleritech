@@ -62,6 +62,10 @@ LinkedIn Outreach
 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 3v-3z"></path></svg>
 AI Assistant
 </button>
+<button onclick="switchTab('syncedjohn')" id="btn-syncedjohn" class="sidebar-item">
+<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-5 h-5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.83-4"></path></svg>
+Synced Jhon
+</button>
 </nav>
 </aside>
 <main class="flex-1 flex flex-col gap-4 overflow-visible md:overflow-hidden relative z-10">
@@ -305,6 +309,35 @@ ACTIVE PIPELINE
 </div>
 </div>
 </section>
+<!-- Tab: Synced Jhon -->
+<section id="tab-syncedjohn" class="tab-content">
+<div class="glass-card flex flex-col h-[calc(100dvh-210px)] md:h-[calc(95vh-150px)] overflow-hidden">
+<div class="flex items-center gap-3 px-5 py-4 border-b border-slate-100/70 shrink-0">
+<div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shrink-0">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.83-4"></path></svg>
+</div>
+<div class="min-w-0">
+<h3 class="text-base font-bold text-slate-800 leading-tight">Synced Jhon</h3>
+<p class="text-[11px] text-slate-400 font-medium">Leads John shared by email &rarr; Enterpryze / ERP Qualified, Natalie, tag sentbyjhon.</p>
+</div>
+<button onclick="syncJohn()" id="syncJohnBtn2" type="button" class="ml-auto flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-3 py-2 text-[11px] font-bold shadow-sm transition-colors shrink-0">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+Sync John
+</button>
+</div>
+<div class="flex flex-wrap items-center gap-2 px-5 py-3 border-b border-slate-100/70 shrink-0">
+<span id="sjStatNew" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">New: &mdash;</span>
+<span id="sjStatSynced" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">Synced: &mdash;</span>
+<span id="sjStatTotal" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">Total: &mdash;</span>
+<button onclick="loadSyncedJohn()" title="Refresh list" class="ml-auto text-slate-400 hover:text-indigo-600 p-1.5 rounded-lg hover:bg-slate-100/60 transition-colors shrink-0">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+</button>
+</div>
+<div id="syncedJohnBody" class="flex-1 overflow-y-auto scroll-container px-4 md:px-6 py-5">
+<div class="text-center text-slate-400 text-sm py-10">Open this tab to load John's leads&hellip;</div>
+</div>
+</div>
+</section>
 </div>
 </main>
 </div>
@@ -485,6 +518,7 @@ function switchTab(tabId) {
     if (tabId === 'summary') setTimeout(() => { if(currentViewData) renderSummaryChart(currentViewData); }, 100);
     if (tabId === 'emails') switchCampaign('enterpryze');
     if (tabId === 'assistant') initChat();
+    if (tabId === 'syncedjohn') initSyncedJohn();
     if (window.innerWidth < 768) { const nav = document.getElementById('sidebarNav'); if (nav && !nav.classList.contains('hidden')) { nav.classList.add('hidden'); nav.classList.remove('flex'); } }
 }
 
@@ -914,12 +948,17 @@ function hideGhlBanner() {
 // Enterpryze pipeline / ERP Qualified stage, assigned to Natalie, source
 // Enterpryze, tagged sentbyjhon. Idempotent + time-budgeted server-side, so a
 // large first run may report "partial" — just click again to continue.
+let syncJohnBusy = false;
 async function syncJohn() {
-    const btn = document.getElementById('syncJohnBtn');
-    const original = btn.innerHTML;
-    btn.disabled = true;
-    btn.classList.add('opacity-60', 'cursor-not-allowed');
-    btn.innerHTML = '<svg class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Syncing\u2026';
+    if (syncJohnBusy) return;
+    syncJohnBusy = true;
+    const btns = ['syncJohnBtn', 'syncJohnBtn2'].map(id => document.getElementById(id)).filter(Boolean);
+    const originals = btns.map(b => b.innerHTML);
+    btns.forEach(b => {
+        b.disabled = true;
+        b.classList.add('opacity-60', 'cursor-not-allowed');
+        b.innerHTML = '<svg class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Syncing\u2026';
+    });
     try {
         const res = await fetch('/api/sync-john', { method: 'POST' });
         const data = await res.json().catch(() => ({}));
@@ -933,14 +972,84 @@ async function syncJohn() {
             if (data.partial) msg += ' Time budget reached \u2014 ' + data.remaining + ' lead(s) left, click "Sync John" again to continue.';
             showGhlBanner(msg);
             refreshGhlLeads(true);
+            loadSyncedJohn();
         }
     } catch (e) {
         showGhlBanner('Sync John could not reach /api/sync-john (' + e.message + '). Deploy on Vercel with the API routes.');
     } finally {
-        btn.disabled = false;
-        btn.classList.remove('opacity-60', 'cursor-not-allowed');
-        btn.innerHTML = original;
+        btns.forEach((b, i) => {
+            b.disabled = false;
+            b.classList.remove('opacity-60', 'cursor-not-allowed');
+            b.innerHTML = originals[i];
+        });
+        syncJohnBusy = false;
     }
+}
+
+/* ---------------- Synced Jhon tab ---------------- */
+function initSyncedJohn() {
+    const body = document.getElementById('syncedJohnBody');
+    if (body && body.dataset.loaded) return;
+    loadSyncedJohn();
+}
+async function loadSyncedJohn() {
+    const body = document.getElementById('syncedJohnBody');
+    if (!body) return;
+    body.dataset.loaded = '1';
+    body.innerHTML = '<div class="text-center text-slate-400 text-sm py-10"><svg class="w-5 h-5 animate-spin inline-block mr-2 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Reading John\'s emails&hellip;</div>';
+    try {
+        const res = await fetch('/api/sync-john?preview=1');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+            body.innerHTML = '<div class="text-center text-rose-500 text-sm py-10 font-semibold">Could not load: ' + escapeHtml(data.error || ('HTTP ' + res.status)) + '</div>';
+            return;
+        }
+        renderSyncedJohn(data);
+    } catch (e) {
+        body.innerHTML = '<div class="text-center text-rose-500 text-sm py-10 font-semibold">Could not reach /api/sync-john (' + escapeHtml(e.message) + ').</div>';
+    }
+}
+function renderSyncedJohn(data) {
+    const leads = data.leads || [];
+    const newOnes = leads.filter(l => !l.synced);
+    const synced = leads.filter(l => l.synced);
+    document.getElementById('sjStatNew').innerHTML = 'New: ' + newOnes.length;
+    document.getElementById('sjStatSynced').innerHTML = 'Synced: ' + synced.length;
+    document.getElementById('sjStatTotal').innerHTML = 'Total: ' + leads.length;
+
+    const row = (l) => {
+        const badge = l.synced
+            ? '<span class="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-200">Synced</span>'
+            : '<span class="text-[9px] font-black uppercase tracking-wide px-2 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300">New</span>';
+        const title = l.company || l.name || l.email || '(unknown)';
+        const sub = [l.name && l.name !== l.company ? l.name : '', l.email, l.phone].filter(Boolean).join(' &middot; ');
+        return '<div class="flex items-center gap-3 px-4 py-3 rounded-2xl border ' + (l.synced ? 'border-slate-100 bg-white/60' : 'border-amber-200 bg-amber-50/40') + ' shadow-sm">'
+            + '<div class="min-w-0 flex-1"><div class="text-sm font-bold text-slate-800 truncate">' + escapeHtml(title) + '</div>'
+            + '<div class="text-[11px] text-slate-400 font-medium truncate">' + (sub || '&mdash;') + '</div></div>'
+            + badge + '</div>';
+    };
+
+    let html = '';
+    html += '<div class="mb-4">';
+    html += '<h4 class="text-[11px] font-black uppercase tracking-widest text-amber-600 mb-2">New contacts</h4>';
+    if (newOnes.length) {
+        if (data.partial) html += '<div class="text-[11px] text-slate-400 mb-2">Click "Sync John" to import these into Enterpryze / ERP Qualified.</div>';
+        html += '<div class="space-y-2">' + newOnes.map(row).join('') + '</div>';
+    } else {
+        html += '<div class="text-center text-slate-400 text-sm py-6 bg-slate-50/60 rounded-2xl border border-slate-100">No new contacts</div>';
+    }
+    html += '</div>';
+
+    html += '<div>';
+    html += '<h4 class="text-[11px] font-black uppercase tracking-widest text-emerald-600 mb-2">Already synced (' + synced.length + ')</h4>';
+    if (synced.length) {
+        html += '<div class="space-y-2">' + synced.map(row).join('') + '</div>';
+    } else {
+        html += '<div class="text-center text-slate-400 text-sm py-6 bg-slate-50/60 rounded-2xl border border-slate-100">Nothing synced yet</div>';
+    }
+    html += '</div>';
+
+    document.getElementById('syncedJohnBody').innerHTML = html;
 }
 function setSyncStatus(text) {
     document.getElementById('syncStatus').innerHTML =

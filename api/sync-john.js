@@ -76,10 +76,20 @@ module.exports = async function handler(req, res) {
     });
     summary.alreadyDone = candidates.length - pending.length;
 
-    // Preview: authenticate + read mailbox, report counts, no GHL writes.
+    // Preview/list: authenticate + read mailbox, report the full lead list with
+    // a "synced" flag, no GHL writes.
     if (preview) {
       summary.newLeads = pending.length;
-      summary.sampleNew = pending.slice(0, 10).map(c => ({ name: c.name || '', email: c.email || '', phone: c.phone || '', company: c.company || '' }));
+      const newKeys = new Set(pending.map(c => c.email || c.phone));
+      summary.leads = candidates
+        .map(c => ({
+          name: c.name || '',
+          email: c.email || '',
+          phone: c.phone || '',
+          company: c.company || '',
+          synced: !newKeys.has(c.email || c.phone),
+        }))
+        .sort((a, b) => Number(a.synced) - Number(b.synced) || (a.company || a.email).localeCompare(b.company || b.email));
       res.status(200).json({ ok: true, ...summary });
       return;
     }
