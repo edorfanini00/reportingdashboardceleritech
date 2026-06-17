@@ -757,7 +757,7 @@ function parsePercent(str) { return parseFloat(str.replace('%', '')) || 0; }
 
 
 function getAggregatedData(keys) {
-    let agg = { outreachTotal:0, pipelineCount:0, meetingsBooked:0, meetingsAttended:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], chartFdaValues:[], chartFoodValues:[], leads:[], dateRange:'' };
+    let agg = { outreachTotal:0, pipelineCount:0, meetingsBooked:0, meetingsAttended:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], chartFdaValues:[], chartFoodValues:[], chartOilValues:[], leads:[], dateRange:'' };
     let chronKeys = [...keys].reverse();
     chronKeys.forEach(key => {
         let data = weeklyData[key]; if (!data) return;
@@ -769,11 +769,14 @@ function getAggregatedData(keys) {
         agg.erpSent += data.erpSent; agg.erpOpenRaw += (parsePercent(data.erpOpen)/100)*data.erpSent; agg.erpClickRaw += (parsePercent(data.erpClick)/100)*data.erpSent; agg.erpReplyRaw += (parsePercent(data.erpReply)/100)*data.erpSent;
         // Build per-day FDA/Food counts from leads
         const weekLeads = leadsByWeek[key] || [];
+        const pipeUpper = (l) => (l.pipeline || '').toUpperCase();
         if (keys.length > 2) {
             agg.chartLabels.push(data.dateRange.split(' - ')[0]);
-            const fdaTotal = weekLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FDA').length;
-            const foodTotal = weekLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() !== 'FDA').length;
+            const fdaTotal = weekLeads.filter(l => pipeUpper(l) === 'FDA').length;
+            const oilTotal = weekLeads.filter(l => pipeUpper(l) === 'OIL & GAS').length;
+            const foodTotal = weekLeads.filter(l => pipeUpper(l) !== 'FDA' && pipeUpper(l) !== 'OIL & GAS').length;
             agg.chartFdaValues.push(fdaTotal);
+            agg.chartOilValues.push(oilTotal);
             agg.chartFoodValues.push(foodTotal);
             agg.chartValues.push(data.chartValues.reduce((a,b)=>a+b,0));
         } else {
@@ -781,15 +784,17 @@ function getAggregatedData(keys) {
             agg.chartValues.push(...data.chartValues);
             // Count leads per day by pipeline
             data.chartLabels.forEach(label => {
-                let fdaDay = 0, foodDay = 0;
+                let fdaDay = 0, oilDay = 0, foodDay = 0;
                 weekLeads.forEach(l => {
                     const leadLabel = l.date.replace(/^(\w{3})\s+(\d{1,2})$/, (m, mon, day) => mon + ' ' + day.padStart(2, '0'));
                     if (leadLabel === label) {
-                        if (l.pipeline && l.pipeline.toUpperCase() === 'FDA') fdaDay++;
+                        if (pipeUpper(l) === 'FDA') fdaDay++;
+                        else if (pipeUpper(l) === 'OIL & GAS') oilDay++;
                         else foodDay++;
                     }
                 });
                 agg.chartFdaValues.push(fdaDay);
+                agg.chartOilValues.push(oilDay);
                 agg.chartFoodValues.push(foodDay);
             });
         }
@@ -854,17 +859,19 @@ function renderSummaryChart(data) {
     const ctx = document.getElementById('leadsSummaryChart').getContext('2d');
     const hasFda = data.chartFdaValues && data.chartFdaValues.some(v => v > 0);
     const hasFood = data.chartFoodValues && data.chartFoodValues.some(v => v > 0);
+    const hasOil = data.chartOilValues && data.chartOilValues.some(v => v > 0);
     let datasets = [];
-    if (hasFda || hasFood) {
+    if (hasFda || hasFood || hasOil) {
         datasets.push({ label: 'Food Man', data: data.chartFoodValues, backgroundColor: '#f97316', borderRadius: 8, barThickness: 16 });
         datasets.push({ label: 'FDA', data: data.chartFdaValues, backgroundColor: '#ef4444', borderRadius: 8, barThickness: 16 });
+        datasets.push({ label: 'Oil & Gas', data: data.chartOilValues, backgroundColor: '#9333ea', borderRadius: 8, barThickness: 16 });
     } else {
         datasets.push({ label: 'Leads', data: data.chartValues, backgroundColor: '#f97316', borderRadius: 8, barThickness: 16 });
     }
     summaryChart = new Chart(ctx, {
         type: 'bar',
         data: { labels: data.chartLabels, datasets: datasets },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: hasFda || hasFood, position: 'top', labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 12, font: { size: 10, weight: 'bold' }, color: '#64748b' } }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.dataset.label+': '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { stacked: true, grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: hasFda || hasFood || hasOil, position: 'top', labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 12, font: { size: 10, weight: 'bold' }, color: '#64748b' } }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.dataset.label+': '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { stacked: true, grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
     });
 }
 const GHL_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
