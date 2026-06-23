@@ -142,7 +142,14 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const messages = toAnthropicMessages(body.messages);
+    // Use full Anthropic history if available (preserves tool calls/results),
+    // otherwise fall back to text-only conversion for backward compat.
+    let messages;
+    if (Array.isArray(body.history) && body.history.length) {
+      messages = body.history;
+    } else {
+      messages = toAnthropicMessages(body.messages);
+    }
     if (!messages.length) {
       res.status(400).json({ ok: false, error: 'No messages provided.' });
       return;
@@ -170,6 +177,7 @@ module.exports = async function handler(req, res) {
           actions,
           model: usedModel,
           fallback: usedModel !== preferredModel,
+          history: messages,
         });
         return;
       }
@@ -189,7 +197,7 @@ module.exports = async function handler(req, res) {
       messages.push({ role: 'user', content: toolResults });
     }
 
-    res.status(200).json({ ok: true, reply: 'Stopped after too many steps. Please refine your request.', actions, model: usedModel });
+    res.status(200).json({ ok: true, reply: 'Stopped after too many steps. Please refine your request.', actions, model: usedModel, history: messages });
   } catch (err) {
     res.status(500).json({ ok: false, error: String((err && err.message) || err) });
   }

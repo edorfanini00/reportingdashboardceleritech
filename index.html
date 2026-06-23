@@ -554,6 +554,7 @@ function switchTab(tabId) {
 
 /* ---------------- AI Assistant chat ---------------- */
 let chatHistory = [];
+let anthropicHistory = [];
 let chatBusy = false;
 let selectedModel = '';
 let modelList = [
@@ -635,6 +636,7 @@ function useSuggestion(btn) { const inp = document.getElementById('chatInput'); 
 
 function resetChat() {
   chatHistory = [];
+  anthropicHistory = [];
   const box = document.getElementById('chatMessages');
   if (box) box.innerHTML = '';
   renderSuggestions();
@@ -723,6 +725,7 @@ async function sendChat(e) {
   inp.value = ''; autoGrow(inp);
   addChatBubble('user', text);
   chatHistory.push({ role: 'user', content: text });
+  anthropicHistory.push({ role: 'user', content: text });
   renderSuggestions();
   addTyping();
 
@@ -730,7 +733,7 @@ async function sendChat(e) {
     const r = await fetch('/api/agent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: chatHistory, model: selectedModel }),
+      body: JSON.stringify({ history: anthropicHistory, model: selectedModel }),
     });
     const data = await r.json();
     removeTyping();
@@ -745,6 +748,7 @@ async function sendChat(e) {
       addActionLog(data.actions);
       addChatBubble('assistant', data.reply);
       chatHistory.push({ role: 'assistant', content: data.reply });
+      if (data.history) anthropicHistory = data.history;
     }
   } catch (err) {
     removeTyping();
