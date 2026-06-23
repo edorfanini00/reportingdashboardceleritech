@@ -85,7 +85,7 @@ async function callClaude(apiKey, messages, model) {
     },
     body: JSON.stringify({
       model,
-      max_tokens: 1500,
+      max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: anthropicTools(),
       messages,

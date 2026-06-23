@@ -739,6 +739,8 @@ async function sendChat(e) {
     } else {
       if (data.fallback && data.model) {
         addFallbackNotice(selectedModel, data.model);
+        selectedModel = data.model;
+        renderModelDropdown();
       }
       addActionLog(data.actions);
       addChatBubble('assistant', data.reply);
