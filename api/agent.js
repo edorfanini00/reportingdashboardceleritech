@@ -4,8 +4,29 @@ const { ghlConfigured } = require('./_lib/ghl-client');
 const { anthropicTools, runTool } = require('./_lib/agent-tools');
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 const MAX_STEPS = 10;
+
+const AVAILABLE_MODELS = [
+  { id: 'claude-sonnet-4-6',          label: 'Claude Sonnet 4.6' },
+  { id: 'claude-opus-4-8',            label: 'Claude Opus 4.8' },
+  { id: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+  { id: 'claude-3-5-haiku-20241022',  label: 'Claude 3.5 Haiku' },
+];
+const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
+
+function buildFallbackOrder(preferred) {
+  const ids = AVAILABLE_MODELS.map(m => m.id);
+  if (!preferred || !ids.includes(preferred)) preferred = DEFAULT_MODEL;
+  return [preferred, ...ids.filter(id => id !== preferred)];
+}
+
+function isRetryableError(status, body) {
+  if (status === 529 || status === 503 || status === 502) return true;
+  if (status === 500) return true;
+  if (status === 400 && /not available|does not exist|not found/i.test(body)) return true;
+  if (status === 404) return true;
+  return false;
+}
 
 const SYSTEM_PROMPT = `You are the CeleriTech CRM assistant, embedded in a GoHighLevel marketing dashboard.
 You help the user manage their GoHighLevel CRM by calling tools.
@@ -54,7 +75,7 @@ function toAnthropicMessages(history) {
     .map(m => ({ role: m.role, content: m.content }));
 }
 
-async function callClaude(apiKey, messages) {
+async function callClaude(apiKey, messages, model) {
   const res = await fetch(ANTHROPIC_URL, {
     method: 'POST',
     headers: {
@@ -63,7 +84,7 @@ async function callClaude(apiKey, messages) {
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       max_tokens: 1500,
       system: SYSTEM_PROMPT,
       tools: anthropicTools(),
@@ -71,8 +92,28 @@ async function callClaude(apiKey, messages) {
     }),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`Anthropic error (${res.status}): ${text.slice(0, 500)}`);
+  if (!res.ok) {
+    const err = new Error(`Anthropic error (${res.status}): ${text.slice(0, 500)}`);
+    err.status = res.status;
+    err.responseBody = text;
+    throw err;
+  }
   return JSON.parse(text);
+}
+
+async function callClaudeWithFallback(apiKey, messages, preferredModel) {
+  const chain = buildFallbackOrder(preferredModel);
+  let lastErr;
+  for (const model of chain) {
+    try {
+      const result = await callClaude(apiKey, messages, model);
+      return { result, model };
+    } catch (err) {
+      lastErr = err;
+      if (!isRetryableError(err.status, err.responseBody || '')) throw err;
+    }
+  }
+  throw lastErr;
 }
 
 module.exports = async function handler(req, res) {
@@ -94,18 +135,27 @@ module.exports = async function handler(req, res) {
 
   try {
     const body = await readBody(req);
+
+    // GET models list
+    if (body.action === 'list_models') {
+      res.status(200).json({ ok: true, models: AVAILABLE_MODELS, default: DEFAULT_MODEL });
+      return;
+    }
+
     const messages = toAnthropicMessages(body.messages);
     if (!messages.length) {
       res.status(400).json({ ok: false, error: 'No messages provided.' });
       return;
     }
 
-    const actions = []; // tools actually executed (for the UI activity log)
+    const preferredModel = body.model || DEFAULT_MODEL;
+    const actions = [];
+    let usedModel = preferredModel;
 
     for (let step = 0; step < MAX_STEPS; step++) {
-      const reply = await callClaude(apiKey, messages);
+      const { result: reply, model: actualModel } = await callClaudeWithFallback(apiKey, messages, usedModel);
+      usedModel = actualModel;
 
-      // Persist the assistant turn (may include tool_use blocks).
       messages.push({ role: 'assistant', content: reply.content });
 
       if (reply.stop_reason !== 'tool_use') {
@@ -114,11 +164,16 @@ module.exports = async function handler(req, res) {
           .map(b => b.text)
           .join('\n')
           .trim();
-        res.status(200).json({ ok: true, reply: textOut || '(no response)', actions });
+        res.status(200).json({
+          ok: true,
+          reply: textOut || '(no response)',
+          actions,
+          model: usedModel,
+          fallback: usedModel !== preferredModel,
+        });
         return;
       }
 
-      // Execute each requested tool and feed results back.
       const toolResults = [];
       for (const block of reply.content) {
         if (block.type !== 'tool_use') continue;
@@ -134,7 +189,7 @@ module.exports = async function handler(req, res) {
       messages.push({ role: 'user', content: toolResults });
     }
 
-    res.status(200).json({ ok: true, reply: 'Stopped after too many steps. Please refine your request.', actions });
+    res.status(200).json({ ok: true, reply: 'Stopped after too many steps. Please refine your request.', actions, model: usedModel });
   } catch (err) {
     res.status(500).json({ ok: false, error: String((err && err.message) || err) });
   }
