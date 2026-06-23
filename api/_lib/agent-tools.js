@@ -65,7 +65,21 @@ const tools = [
           return required.every(r => cTags.includes(r));
         });
       }
-      return { count: results.length, contacts: results.map(contactSummary) };
+      // Keep the payload compact so large lists don't bloat the model context
+      // (which slows every subsequent call). Return all ids (small) but only a
+      // sample of full details. For bulk actions, prefer passing `tag` to the
+      // bulk tool, or these contactIds.
+      const ids = results.map(c => c.id).filter(Boolean);
+      const sample = results.slice(0, 25).map(c => {
+        const s = contactSummary(c);
+        return { id: s.id, name: s.name, email: s.email, company: s.company };
+      });
+      return {
+        count: results.length,
+        contactIds: ids,
+        sample,
+        note: results.length > 25 ? `Showing 25 of ${results.length}. To act on all of them, pass tag (+allTags) or these contactIds to a bulk tool.` : undefined,
+      };
     },
   },
   {

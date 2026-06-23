@@ -93,22 +93,37 @@ function toAnthropicMessages(history) {
     .map(m => ({ role: m.role, content: m.content }));
 }
 
+const CLAUDE_CALL_TIMEOUT_MS = 28000;
+
 async function callClaude(apiKey, messages, model) {
-  const res = await fetch(ANTHROPIC_URL, {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tools: anthropicTools(),
-      messages,
-    }),
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), CLAUDE_CALL_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(ANTHROPIC_URL, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4096,
+        system: SYSTEM_PROMPT,
+        tools: anthropicTools(),
+        messages,
+      }),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    // Timeout/abort or network error — treat as retryable so we can fall back.
+    const err = new Error(e.name === 'AbortError' ? `Model ${model} timed out` : String(e && e.message || e));
+    err.status = 503;
+    throw err;
+  }
+  clearTimeout(timer);
   const text = await res.text();
   if (!res.ok) {
     const err = new Error(`Anthropic error (${res.status}): ${text.slice(0, 500)}`);
@@ -201,8 +216,28 @@ module.exports = async function handler(req, res) {
     const actions = [];
     let usedModel = preferredModel;
     let bulkJob = null;
+    const START = Date.now();
+    const DEADLINE_MS = 42000; // return gracefully before Vercel's 60s hard cap
 
     for (let step = 0; step < MAX_STEPS; step++) {
+      // If we're running low on time, stop and return cleanly rather than
+      // letting Vercel hard-timeout (which returns an HTML error page).
+      if (Date.now() - START > DEADLINE_MS) {
+        await kvSet(kvKey, messages, { ex: KV_TTL });
+        res.status(200).json({
+          ok: true,
+          reply: bulkJob
+            ? "The bulk job is queued and the dashboard is processing it below."
+            : "I'm still working on this — it's a large request. Say \"continue\" and I'll pick up where I left off.",
+          actions,
+          chatId,
+          model: usedModel,
+          fallback: usedModel !== preferredModel,
+          bulkJob,
+        });
+        return;
+      }
+
       const { result: reply, model: actualModel } = await callClaudeWithFallback(apiKey, messages, usedModel);
       usedModel = actualModel;
 
