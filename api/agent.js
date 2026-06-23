@@ -115,6 +115,23 @@ async function callClaude(apiKey, messages, model) {
   return JSON.parse(text);
 }
 
+// Run async jobs with bounded concurrency, preserving result order.
+// Used to execute many tool calls (e.g. bulk contact updates) in parallel
+// so a batch write doesn't run for 60s+ and time out the function.
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function runner() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await worker(items[i], i);
+    }
+  }
+  const runners = Array.from({ length: Math.min(limit, items.length) }, runner);
+  await Promise.all(runners);
+  return results;
+}
+
 async function callClaudeWithFallback(apiKey, messages, preferredModel) {
   const chain = buildFallbackOrder(preferredModel);
   let lastErr;
@@ -204,12 +221,17 @@ module.exports = async function handler(req, res) {
         return;
       }
 
-      const toolResults = [];
-      for (const block of reply.content) {
-        if (block.type !== 'tool_use') continue;
+      const toolBlocks = reply.content.filter(b => b.type === 'tool_use');
+      // Execute tool calls with bounded concurrency (5 at a time) so bulk
+      // operations like updating 19 contacts finish in seconds, not minutes.
+      const executed = await mapWithConcurrency(toolBlocks, 5, async (block) => {
         const result = await runTool(block.name, block.input || {});
-        const executed = !(result && result.preview) && !(result && result.error);
-        actions.push({ tool: block.name, input: block.input, executed, preview: !!(result && result.preview) });
+        return { block, result };
+      });
+      const toolResults = [];
+      for (const { block, result } of executed) {
+        const didRun = !(result && result.preview) && !(result && result.error);
+        actions.push({ tool: block.name, input: block.input, executed: didRun, preview: !!(result && result.preview) });
         toolResults.push({
           type: 'tool_result',
           tool_use_id: block.id,

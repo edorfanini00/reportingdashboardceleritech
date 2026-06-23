@@ -736,7 +736,20 @@ async function sendChat(e) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const data = await r.json();
+    const raw = await r.text();
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      removeTyping();
+      const timedOut = r.status === 504 || /timed out|timeout|FUNCTION_INVOCATION/i.test(raw);
+      if (timedOut) {
+        addChatBubble('assistant', '⚠️ That action took too long and the server timed out. This can happen with large batch operations — try breaking it into smaller chunks (e.g. update 5-10 contacts at a time). Your previous changes were likely still applied.');
+      } else {
+        addChatBubble('assistant', '⚠️ Server error (' + r.status + '). Please try again in a moment.');
+      }
+      return;
+    }
     removeTyping();
     if (!data.ok) {
       addChatBubble('assistant', '⚠️ ' + (data.error || 'Something went wrong.'));
