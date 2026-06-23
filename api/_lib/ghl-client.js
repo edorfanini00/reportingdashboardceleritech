@@ -263,12 +263,74 @@ async function updateOpportunity(opportunityId, fields) {
   try { return JSON.parse(text); } catch { return {}; }
 }
 
+// Canonical GHL standard contact fields, keyed by a normalized (lowercased,
+// despaced) alias so "Company Name", "companyName", "company" all map correctly.
+const STANDARD_CONTACT_FIELDS = {
+  firstname: 'firstName', fname: 'firstName',
+  lastname: 'lastName', lname: 'lastName',
+  name: 'name', fullname: 'name', contactname: 'name',
+  email: 'email', phone: 'phone',
+  company: 'companyName', companyname: 'companyName',
+  address: 'address1', address1: 'address1',
+  city: 'city', state: 'state', country: 'country',
+  postalcode: 'postalCode', zip: 'postalCode', zipcode: 'postalCode',
+  website: 'website', source: 'source', tags: 'tags',
+  assignedto: 'assignedTo', timezone: 'timezone', dnd: 'dnd',
+};
+const CANONICAL_CONTACT_FIELDS = new Set(Object.values(STANDARD_CONTACT_FIELDS));
+
+let _cfCache = null;
+let _cfCacheTime = 0;
+async function getCustomFieldMapCached() {
+  const now = Date.now();
+  if (_cfCache && now - _cfCacheTime < 60000) return _cfCache;
+  _cfCache = await fetchCustomFieldMap();
+  _cfCacheTime = now;
+  return _cfCache;
+}
+
+// Split a loose {key: value} object into the GHL contact payload, routing any
+// non-standard keys to customFields (resolved by custom-field name or fieldKey).
+// Throws a clear error if a key matches neither a standard nor a custom field.
+async function normalizeContactFields(fields) {
+  const out = {};
+  const custom = [];
+  let reverse = null;
+
+  for (const [rawKey, value] of Object.entries(fields || {})) {
+    if (rawKey === 'customFields' && Array.isArray(value)) { custom.push(...value); continue; }
+    const norm = String(rawKey).toLowerCase().replace(/[\s_]+/g, '');
+    if (STANDARD_CONTACT_FIELDS[norm]) { out[STANDARD_CONTACT_FIELDS[norm]] = value; continue; }
+    if (CANONICAL_CONTACT_FIELDS.has(rawKey)) { out[rawKey] = value; continue; }
+
+    // Custom field: resolve by name or fieldKey (case-insensitive).
+    if (!reverse) {
+      const map = await getCustomFieldMapCached();
+      reverse = {};
+      for (const [id, v] of Object.entries(map)) {
+        if (v.name) reverse[v.name.toLowerCase()] = id;
+        if (v.fieldKey) {
+          reverse[String(v.fieldKey).toLowerCase()] = id;
+          reverse[String(v.fieldKey).split('.').pop().toLowerCase()] = id;
+        }
+      }
+    }
+    const id = reverse[String(rawKey).toLowerCase()];
+    if (id) { custom.push({ id, value }); continue; }
+    throw new Error(`Unknown contact field "${rawKey}". Use list_custom_fields to find valid custom fields — or this may belong on an opportunity, not a contact.`);
+  }
+  if (custom.length) out.customFields = custom;
+  return out;
+}
+
 // Update arbitrary fields on a contact (e.g. { source: 'Enterpryze' }).
+// Non-standard keys are routed to customFields automatically.
 async function updateContact(contactId, fields) {
+  const payload = await normalizeContactFields(fields);
   const res = await fetch(`${GHL_BASE}/contacts/${contactId}`, {
     method: 'PUT',
     headers: authHeaders(),
-    body: JSON.stringify(fields),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const text = await res.text();
