@@ -2,8 +2,19 @@
 // GoHighLevel via tool use. Write actions are confirmation-gated (see agent-tools).
 const { ghlConfigured } = require('./_lib/ghl-client');
 const { anthropicTools, runTool } = require('./_lib/agent-tools');
-const { kv } = require('@vercel/kv');
 const crypto = require('crypto');
+
+let _kv;
+try { _kv = require('@vercel/kv').kv; } catch { _kv = null; }
+
+async function kvGet(key) {
+  if (!_kv) return null;
+  try { return await _kv.get(key); } catch { return null; }
+}
+async function kvSet(key, value, opts) {
+  if (!_kv) return;
+  try { await _kv.set(key, value, opts); } catch { /* best-effort */ }
+}
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MAX_STEPS = 10;
@@ -152,7 +163,7 @@ module.exports = async function handler(req, res) {
     // Load existing conversation from KV, or start fresh.
     let messages = [];
     if (body.chatId) {
-      const stored = await kv.get(kvKey);
+      const stored = await kvGet(kvKey);
       if (Array.isArray(stored)) messages = stored;
     }
 
@@ -181,7 +192,7 @@ module.exports = async function handler(req, res) {
           .map(b => b.text)
           .join('\n')
           .trim();
-        await kv.set(kvKey, messages, { ex: KV_TTL });
+        await kvSet(kvKey, messages, { ex: KV_TTL });
         res.status(200).json({
           ok: true,
           reply: textOut || '(no response)',
@@ -208,7 +219,7 @@ module.exports = async function handler(req, res) {
       messages.push({ role: 'user', content: toolResults });
     }
 
-    await kv.set(kvKey, messages, { ex: KV_TTL });
+    await kvSet(kvKey, messages, { ex: KV_TTL });
     res.status(200).json({ ok: true, reply: 'Stopped after too many steps. Please refine your request.', actions, chatId, model: usedModel });
   } catch (err) {
     res.status(500).json({ ok: false, error: String((err && err.message) || err) });
