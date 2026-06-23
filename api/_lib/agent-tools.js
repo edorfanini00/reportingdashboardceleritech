@@ -44,6 +44,30 @@ const tools = [
     },
   },
   {
+    name: 'search_by_tag',
+    write: false,
+    description: 'Find ALL contacts that have a specific tag (paginates through every result, not limited to 20). If multiple tags are provided, returns only contacts that have ALL of them (AND logic). Much more reliable than search_contacts for tag-based queries.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        tag: { type: 'string', description: 'Exact tag name to search for (primary tag to paginate through)' },
+        allTags: { type: 'array', items: { type: 'string' }, description: 'Optional: list of ALL tags the contacts must have (AND filter applied after fetching). Include the primary tag here too.' },
+      },
+      required: ['tag'],
+    },
+    async run({ tag, allTags }) {
+      let results = await ghl.searchByTagEquals(tag);
+      if (Array.isArray(allTags) && allTags.length > 1) {
+        const required = allTags.map(t => t.toLowerCase());
+        results = results.filter(c => {
+          const cTags = (c.tags || []).map(t => t.toLowerCase());
+          return required.every(r => cTags.includes(r));
+        });
+      }
+      return { count: results.length, contacts: results.map(contactSummary) };
+    },
+  },
+  {
     name: 'get_contact',
     write: false,
     description: 'Get full details for a single contact by its id.',
