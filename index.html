@@ -710,6 +710,78 @@ function addFallbackNotice(requested, used) {
   box.scrollTop = box.scrollHeight;
 }
 
+const BULK_OP_LABEL = { update_contact: 'Updating contacts', add_tags: 'Adding tags', remove_tags: 'Removing tags' };
+
+function addProgressBar(opLabel, total) {
+  const box = document.getElementById('chatMessages');
+  const wrap = document.createElement('div');
+  wrap.className = 'flex justify-start';
+  wrap.innerHTML =
+    '<div class="max-w-[85%] w-[320px] bg-white border border-slate-100 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">' +
+      '<div class="flex items-center justify-between mb-2">' +
+        '<span class="text-[12px] font-bold text-slate-700">' + escapeHtml(opLabel) + '</span>' +
+        '<span class="bp-count text-[11px] font-semibold text-slate-400">0 / ' + total + '</span>' +
+      '</div>' +
+      '<div class="h-2 bg-slate-100 rounded-full overflow-hidden">' +
+        '<div class="bp-fill h-full bg-orange-500 rounded-full transition-all duration-300" style="width:0%"></div>' +
+      '</div>' +
+      '<div class="bp-status text-[10px] text-slate-400 mt-1.5">Processing…</div>' +
+    '</div>';
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+  return wrap;
+}
+
+function updateProgressBar(wrap, processed, total, statusText, isError) {
+  if (!wrap) return;
+  const pct = total ? Math.round((processed / total) * 100) : 100;
+  const fill = wrap.querySelector('.bp-fill');
+  const count = wrap.querySelector('.bp-count');
+  const status = wrap.querySelector('.bp-status');
+  if (fill) { fill.style.width = pct + '%'; if (isError) fill.classList.replace('bg-orange-500', 'bg-rose-500'); }
+  if (count) count.textContent = processed + ' / ' + total;
+  if (status && statusText) status.textContent = statusText;
+}
+
+async function runBulkJob(job) {
+  const opLabel = BULK_OP_LABEL[job.op] || 'Processing';
+  const bar = addProgressBar(opLabel, job.total);
+  let processed = 0;
+  let lastErrCount = 0;
+  const CHUNK = 10;
+
+  while (processed < job.total) {
+    let d;
+    try {
+      const r = await fetch('/api/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'process', jobId: job.id, chunk: CHUNK }),
+      });
+      const raw = await r.text();
+      try { d = JSON.parse(raw); } catch { d = null; }
+      if (!d || !d.ok) {
+        updateProgressBar(bar, processed, job.total, (d && d.error) || 'Stopped (server error). Retrying may resume it.', true);
+        return;
+      }
+    } catch (err) {
+      updateProgressBar(bar, processed, job.total, 'Connection lost — ' + err.message, true);
+      return;
+    }
+    processed = d.processed;
+    lastErrCount = d.errorCount || 0;
+    updateProgressBar(bar, processed, d.total, 'Processing… ' + (lastErrCount ? '(' + lastErrCount + ' errors)' : ''));
+    if (d.done) {
+      const ok = d.total - lastErrCount;
+      const msg = lastErrCount
+        ? '✓ Done: ' + ok + ' succeeded, ' + lastErrCount + ' failed.'
+        : '✓ All ' + d.total + ' done.';
+      updateProgressBar(bar, processed, d.total, msg, lastErrCount > 0);
+      return;
+    }
+  }
+}
+
 function autoGrow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 128) + 'px'; }
 function chatKeydown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(e); } }
 
@@ -763,6 +835,9 @@ async function sendChat(e) {
       addActionLog(data.actions);
       addChatBubble('assistant', data.reply);
       chatHistory.push({ role: 'assistant', content: data.reply });
+      if (data.bulkJob && data.bulkJob.id && data.bulkJob.total > 0) {
+        await runBulkJob(data.bulkJob);
+      }
     }
   } catch (err) {
     removeTyping();

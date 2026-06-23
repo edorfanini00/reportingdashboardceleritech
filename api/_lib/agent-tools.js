@@ -4,6 +4,7 @@
 // otherwise they return a preview so the assistant can ask the user to confirm.
 
 const ghl = require('./ghl-client');
+const bulk = require('./bulk');
 
 function contactSummary(c) {
   if (!c) return null;
@@ -241,6 +242,66 @@ const tools = [
   },
 
   // ---------- WRITE (confirmation-gated) ----------
+  {
+    name: 'bulk_update_contacts',
+    write: true,
+    description: 'Update the SAME fields on MANY contacts at once (e.g. set source for every contact with a tag). ALWAYS use this instead of calling update_contact repeatedly when changing more than ~3 contacts — it processes in the background in chunks so it never times out, no matter how many contacts. Provide EITHER contactIds (explicit list) OR tag (+ optional allTags for AND filtering). Set confirmed=true ONLY after the user approves.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        fields: { type: 'object', description: 'Fields to set on every matched contact, e.g. {"source":"Facebook - Food manufacturer"}' },
+        contactIds: { type: 'array', items: { type: 'string' }, description: 'Explicit contact ids to update (use this if you already have the list).' },
+        tag: { type: 'string', description: 'Update all contacts that have this tag.' },
+        allTags: { type: 'array', items: { type: 'string' }, description: 'Require ALL of these tags (AND filter). Include the primary tag here too.' },
+        confirmed: { type: 'boolean', description: 'Must be true to actually queue the job.' },
+      },
+      required: ['fields'],
+    },
+    async run({ fields, contactIds, tag, allTags }) {
+      const job = await bulk.createBulkJob({ op: 'update_contact', fields, contactIds, tag, allTags });
+      return {
+        ok: true,
+        bulk: true,
+        bulkJobId: job.id,
+        op: 'update_contact',
+        total: job.total,
+        message: job.total === 0
+          ? 'No matching contacts found, nothing to update.'
+          : `Queued an update for ${job.total} contacts. The dashboard will process them automatically and show progress.`,
+      };
+    },
+  },
+  {
+    name: 'bulk_tag_contacts',
+    write: true,
+    description: 'Add or remove the SAME tag(s) on MANY contacts at once. Use instead of add_tags/remove_tags when affecting more than ~3 contacts — runs in the background in chunks so it never times out. mode is "add" or "remove". Provide EITHER contactIds OR tag (+ optional allTags filter). Set confirmed=true ONLY after the user approves.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        mode: { type: 'string', description: '"add" or "remove"' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'The tag(s) to add or remove on every matched contact.' },
+        contactIds: { type: 'array', items: { type: 'string' }, description: 'Explicit contact ids to act on.' },
+        tag: { type: 'string', description: 'Match all contacts that have this tag.' },
+        allTags: { type: 'array', items: { type: 'string' }, description: 'Require ALL of these tags (AND filter).' },
+        confirmed: { type: 'boolean' },
+      },
+      required: ['mode', 'tags'],
+    },
+    async run({ mode, tags, contactIds, tag, allTags }) {
+      const op = mode === 'remove' ? 'remove_tags' : 'add_tags';
+      const job = await bulk.createBulkJob({ op, tags, contactIds, tag, allTags });
+      return {
+        ok: true,
+        bulk: true,
+        bulkJobId: job.id,
+        op,
+        total: job.total,
+        message: job.total === 0
+          ? 'No matching contacts found, nothing to change.'
+          : `Queued ${mode === 'remove' ? 'removal' : 'addition'} of tag(s) on ${job.total} contacts. The dashboard will process them automatically and show progress.`,
+      };
+    },
+  },
   {
     name: 'add_tags',
     write: true,
