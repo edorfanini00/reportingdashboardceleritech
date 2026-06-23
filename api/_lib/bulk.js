@@ -114,15 +114,22 @@ async function processBulkJob(jobId, chunkSize = 8) {
   const end = Math.min(start + Math.max(1, chunkSize), job.total);
   const slice = job.ids.slice(start, end);
 
-  await Promise.all(slice.map(async (id) => {
-    try {
-      if (job.op === 'update_contact') await ghl.updateContact(id, job.fields);
-      else if (job.op === 'add_tags') await ghl.addTagsToContact(id, job.tags);
-      else if (job.op === 'remove_tags') await ghl.removeTagsFromContact(id, job.tags);
-    } catch (e) {
-      job.errors.push({ id, error: String((e && e.message) || e) });
+  // Bounded concurrency (4) to avoid GHL burst rate limits.
+  const CONCURRENCY = 4;
+  let idx = 0;
+  async function worker() {
+    while (idx < slice.length) {
+      const id = slice[idx++];
+      try {
+        if (job.op === 'update_contact') await ghl.updateContact(id, job.fields);
+        else if (job.op === 'add_tags') await ghl.addTagsToContact(id, job.tags);
+        else if (job.op === 'remove_tags') await ghl.removeTagsFromContact(id, job.tags);
+      } catch (e) {
+        job.errors.push({ id, error: String((e && e.message) || e) });
+      }
     }
-  }));
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, slice.length) }, worker));
 
   job.cursor = end;
   job.done = job.cursor >= job.total;

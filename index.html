@@ -785,6 +785,10 @@ async function runBulkJob(job) {
         ? '✓ Done: ' + ok + ' succeeded, ' + lastErrCount + ' failed.'
         : '✓ All ' + total + ' done.';
       updateProgressBar(bar, processed, total, msg, lastErrCount > 0);
+      if (lastErrCount && d.errors && d.errors.length) {
+        const first = d.errors[0];
+        addChatBubble('assistant', '⚠️ The updates failed. First error: `' + (first.error || 'unknown') + '` (contact ' + (first.id || '?') + '). This usually means a permissions/scope or field-format issue on the GoHighLevel side.');
+      }
       return;
     }
   }
