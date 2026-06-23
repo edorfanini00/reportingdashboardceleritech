@@ -554,7 +554,7 @@ function switchTab(tabId) {
 
 /* ---------------- AI Assistant chat ---------------- */
 let chatHistory = [];
-let anthropicHistory = [];
+let chatId = null;
 let chatBusy = false;
 let selectedModel = '';
 let modelList = [
@@ -636,7 +636,7 @@ function useSuggestion(btn) { const inp = document.getElementById('chatInput'); 
 
 function resetChat() {
   chatHistory = [];
-  anthropicHistory = [];
+  chatId = null;
   const box = document.getElementById('chatMessages');
   if (box) box.innerHTML = '';
   renderSuggestions();
@@ -725,21 +725,23 @@ async function sendChat(e) {
   inp.value = ''; autoGrow(inp);
   addChatBubble('user', text);
   chatHistory.push({ role: 'user', content: text });
-  anthropicHistory.push({ role: 'user', content: text });
   renderSuggestions();
   addTyping();
 
   try {
+    const payload = { message: text, model: selectedModel };
+    if (chatId) payload.chatId = chatId;
     const r = await fetch('/api/agent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ history: anthropicHistory, model: selectedModel }),
+      body: JSON.stringify(payload),
     });
     const data = await r.json();
     removeTyping();
     if (!data.ok) {
       addChatBubble('assistant', '⚠️ ' + (data.error || 'Something went wrong.'));
     } else {
+      if (data.chatId) chatId = data.chatId;
       if (data.fallback && data.model) {
         addFallbackNotice(selectedModel, data.model);
         selectedModel = data.model;
@@ -748,7 +750,6 @@ async function sendChat(e) {
       addActionLog(data.actions);
       addChatBubble('assistant', data.reply);
       chatHistory.push({ role: 'assistant', content: data.reply });
-      if (data.history) anthropicHistory = data.history;
     }
   } catch (err) {
     removeTyping();

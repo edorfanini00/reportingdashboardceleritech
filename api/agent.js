@@ -2,6 +2,8 @@
 // GoHighLevel via tool use. Write actions are confirmation-gated (see agent-tools).
 const { ghlConfigured } = require('./_lib/ghl-client');
 const { anthropicTools, runTool } = require('./_lib/agent-tools');
+const { kv } = require('@vercel/kv');
+const crypto = require('crypto');
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MAX_STEPS = 10;
@@ -142,18 +144,25 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    // Use full Anthropic history if available (preserves tool calls/results),
-    // otherwise fall back to text-only conversion for backward compat.
-    let messages;
-    if (Array.isArray(body.history) && body.history.length) {
-      messages = body.history;
-    } else {
-      messages = toAnthropicMessages(body.messages);
+    const chatId = body.chatId || crypto.randomUUID();
+    const kvKey = `chat:${chatId}`;
+    const KV_TTL = 3600; // 1 hour
+
+    // Load existing conversation from KV, or start fresh.
+    let messages = [];
+    if (body.chatId) {
+      const stored = await kv.get(kvKey);
+      if (Array.isArray(stored)) messages = stored;
     }
-    if (!messages.length) {
-      res.status(400).json({ ok: false, error: 'No messages provided.' });
+
+    // Append the new user message.
+    const userText = body.message || (Array.isArray(body.messages) && body.messages.length
+      ? body.messages[body.messages.length - 1].content : null);
+    if (!userText) {
+      res.status(400).json({ ok: false, error: 'No message provided.' });
       return;
     }
+    messages.push({ role: 'user', content: userText });
 
     const preferredModel = body.model || DEFAULT_MODEL;
     const actions = [];
@@ -171,13 +180,14 @@ module.exports = async function handler(req, res) {
           .map(b => b.text)
           .join('\n')
           .trim();
+        await kv.set(kvKey, messages, { ex: KV_TTL });
         res.status(200).json({
           ok: true,
           reply: textOut || '(no response)',
           actions,
+          chatId,
           model: usedModel,
           fallback: usedModel !== preferredModel,
-          history: messages,
         });
         return;
       }
@@ -197,7 +207,8 @@ module.exports = async function handler(req, res) {
       messages.push({ role: 'user', content: toolResults });
     }
 
-    res.status(200).json({ ok: true, reply: 'Stopped after too many steps. Please refine your request.', actions, model: usedModel, history: messages });
+    await kv.set(kvKey, messages, { ex: KV_TTL });
+    res.status(200).json({ ok: true, reply: 'Stopped after too many steps. Please refine your request.', actions, chatId, model: usedModel });
   } catch (err) {
     res.status(500).json({ ok: false, error: String((err && err.message) || err) });
   }
