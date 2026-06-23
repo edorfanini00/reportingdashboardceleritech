@@ -259,6 +259,7 @@ const tools = [
     },
     async run({ fields, contactIds, tag, allTags }) {
       const job = await bulk.createBulkJob({ op: 'update_contact', fields, contactIds, tag, allTags });
+      const count = job.total == null ? 'the matching' : job.total;
       return {
         ok: true,
         bulk: true,
@@ -267,7 +268,7 @@ const tools = [
         total: job.total,
         message: job.total === 0
           ? 'No matching contacts found, nothing to update.'
-          : `Queued an update for ${job.total} contacts. The dashboard will process them automatically and show progress.`,
+          : `Queued an update for ${count} contacts. The dashboard is now processing them automatically and showing live progress — no need to verify each one.`,
       };
     },
   },
@@ -290,6 +291,7 @@ const tools = [
     async run({ mode, tags, contactIds, tag, allTags }) {
       const op = mode === 'remove' ? 'remove_tags' : 'add_tags';
       const job = await bulk.createBulkJob({ op, tags, contactIds, tag, allTags });
+      const count = job.total == null ? 'the matching' : job.total;
       return {
         ok: true,
         bulk: true,
@@ -298,7 +300,7 @@ const tools = [
         total: job.total,
         message: job.total === 0
           ? 'No matching contacts found, nothing to change.'
-          : `Queued ${mode === 'remove' ? 'removal' : 'addition'} of tag(s) on ${job.total} contacts. The dashboard will process them automatically and show progress.`,
+          : `Queued ${mode === 'remove' ? 'removal' : 'addition'} of tag(s) on ${count} contacts. The dashboard is now processing them automatically and showing live progress.`,
       };
     },
   },

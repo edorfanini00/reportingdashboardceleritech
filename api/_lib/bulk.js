@@ -56,7 +56,10 @@ function jobStatus(job) {
   };
 }
 
-// Create a job: resolve targets, persist to KV, return status (incl. jobId, total).
+// Create a job. If explicit contactIds are given the job is ready immediately;
+// otherwise tag-based resolution is DEFERRED to the first process() call so the
+// (potentially slow) GHL search doesn't run inside the chat request and time it
+// out. Persists to KV and returns the job.
 async function createBulkJob(spec) {
   if (!VALID_OPS.includes(spec.op)) {
     throw new Error(`Unsupported bulk op: ${spec.op}`);
@@ -64,16 +67,26 @@ async function createBulkJob(spec) {
   if (!kvAvailable()) {
     throw new Error('Bulk actions require Vercel KV. Connect a KV store to the project.');
   }
-  const ids = await resolveTargets(spec);
+
+  let ids = [];
+  let resolved = false;
+  if (Array.isArray(spec.contactIds) && spec.contactIds.length) {
+    ids = [...new Set(spec.contactIds.filter(Boolean))];
+    resolved = true; // explicit list = nothing to look up
+  }
+
   const job = {
     id: crypto.randomUUID(),
     op: spec.op,
     fields: spec.fields || null,
     tags: spec.tags || null,
+    tag: spec.tag || null,
+    allTags: spec.allTags || null,
     ids,
-    total: ids.length,
+    total: resolved ? ids.length : null, // unknown until resolved
+    resolved,
     cursor: 0,
-    done: ids.length === 0,
+    done: resolved && ids.length === 0,
     errors: [],
     createdAt: Date.now(),
   };
@@ -82,9 +95,19 @@ async function createBulkJob(spec) {
 }
 
 // Process the next `chunkSize` contacts of a job. Safe to call repeatedly.
+// Resolves tag-based targets lazily on the first call.
 async function processBulkJob(jobId, chunkSize = 8) {
   const job = await kvGet(`bulk:${jobId}`);
   if (!job) return { error: 'Job not found or expired.' };
+
+  if (!job.resolved) {
+    job.ids = await resolveTargets({ tag: job.tag, allTags: job.allTags });
+    job.total = job.ids.length;
+    job.resolved = true;
+    job.done = job.total === 0;
+    await kvSet(`bulk:${jobId}`, job, { ex: TTL });
+  }
+
   if (job.done) return jobStatus(job);
 
   const start = job.cursor;
