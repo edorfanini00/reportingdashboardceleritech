@@ -557,12 +557,12 @@ let chatHistory = [];
 let chatBusy = false;
 let selectedModel = '';
 let modelList = [
-  { id: 'claude-sonnet-4-6',          label: 'Claude Sonnet 4.6' },
-  { id: 'claude-opus-4-8',            label: 'Claude Opus 4.8' },
-  { id: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
-  { id: 'claude-3-5-haiku-20241022',  label: 'Claude 3.5 Haiku' },
+  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+  { id: 'claude-opus-4-8',  label: 'Claude Opus 4.8' },
+  { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
 ];
-const MODEL_SHORT = { 'claude-sonnet-4-6': 'Sonnet 4.6', 'claude-opus-4-8': 'Opus 4.8', 'claude-3-5-sonnet-20241022': '3.5 Sonnet', 'claude-3-5-haiku-20241022': '3.5 Haiku' };
+const MODEL_SHORT = { 'claude-sonnet-4-6': 'Sonnet 4.6', 'claude-opus-4-8': 'Opus 4.8', 'claude-sonnet-4-5': 'Sonnet 4.5', 'claude-haiku-4-5': 'Haiku 4.5' };
 
 (async function loadModels() {
   try {

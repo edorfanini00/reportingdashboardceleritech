@@ -7,10 +7,10 @@ const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MAX_STEPS = 10;
 
 const AVAILABLE_MODELS = [
-  { id: 'claude-sonnet-4-6',          label: 'Claude Sonnet 4.6' },
-  { id: 'claude-opus-4-8',            label: 'Claude Opus 4.8' },
-  { id: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
-  { id: 'claude-3-5-haiku-20241022',  label: 'Claude 3.5 Haiku' },
+  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+  { id: 'claude-opus-4-8',  label: 'Claude Opus 4.8' },
+  { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
 ];
 const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 
