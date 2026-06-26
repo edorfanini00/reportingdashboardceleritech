@@ -25,25 +25,42 @@ const VALID_OPS = ['update_contact', 'add_tags', 'remove_tags'];
 // time with a pause between each so bulk jobs complete without 429s.
 const BULK_DELAY_MS = 600; // ~1.6 contacts/sec — well under the burst ceiling
 const BULK_DEFAULT_CHUNK = 3;
+const RESOLVE_PAGE_LIMIT = 100;
+const RESOLVE_PAGES_PER_CALL = 1; // one search page per /api/bulk request
 
 function kvAvailable() {
   return Boolean(_kv);
 }
 
-// Resolve the list of contact ids a job will act on.
+function filterByAllTags(contacts, allTags) {
+  if (!Array.isArray(allTags) || allTags.length <= 1) return contacts;
+  const required = allTags.map(t => String(t).toLowerCase());
+  return contacts.filter(c => {
+    const cTags = (c.tags || []).map(t => String(t).toLowerCase());
+    return required.every(r => cTags.includes(r));
+  });
+}
+
+function finalizeResolvedIds(job) {
+  let contacts = job.resolveBuffer || [];
+  contacts = filterByAllTags(contacts, job.allTags);
+  job.ids = [...new Set(contacts.map(c => c.id).filter(Boolean))];
+  job.total = job.ids.length;
+  job.resolved = true;
+  job.resolving = false;
+  job.done = job.total === 0;
+  delete job.resolveBuffer;
+  delete job.resolvePage;
+}
+
+// Resolve the list of contact ids a job will act on (full scan — scripts only).
 async function resolveTargets({ contactIds, tag, allTags }) {
   if (Array.isArray(contactIds) && contactIds.length) {
     return [...new Set(contactIds.filter(Boolean))];
   }
   if (tag) {
     let results = await ghl.searchByTagEquals(tag);
-    if (Array.isArray(allTags) && allTags.length > 1) {
-      const required = allTags.map(t => String(t).toLowerCase());
-      results = results.filter(c => {
-        const cTags = (c.tags || []).map(t => String(t).toLowerCase());
-        return required.every(r => cTags.includes(r));
-      });
-    }
+    results = filterByAllTags(results, allTags);
     return [...new Set(results.map(c => c.id).filter(Boolean))];
   }
   return [];
@@ -56,15 +73,15 @@ function jobStatus(job) {
     total: job.total,
     processed: job.cursor,
     done: job.done,
+    resolving: !!job.resolving,
     errorCount: job.errors.length,
     errors: job.errors.slice(0, 10),
   };
 }
 
 // Create a job. If explicit contactIds are given the job is ready immediately;
-// otherwise tag-based resolution is DEFERRED to the first process() call so the
-// (potentially slow) GHL search doesn't run inside the chat request and time it
-// out. Persists to KV and returns the job.
+// otherwise tag-based resolution is DEFERRED to process() calls (one search page
+// per request) so nothing slow runs inside the chat request.
 async function createBulkJob(spec) {
   if (!VALID_OPS.includes(spec.op)) {
     throw new Error(`Unsupported bulk op: ${spec.op}`);
@@ -77,7 +94,7 @@ async function createBulkJob(spec) {
   let resolved = false;
   if (Array.isArray(spec.contactIds) && spec.contactIds.length) {
     ids = [...new Set(spec.contactIds.filter(Boolean))];
-    resolved = true; // explicit list = nothing to look up
+    resolved = true;
   }
 
   const job = {
@@ -88,8 +105,11 @@ async function createBulkJob(spec) {
     tag: spec.tag || null,
     allTags: spec.allTags || null,
     ids,
-    total: resolved ? ids.length : null, // unknown until resolved
+    total: resolved ? ids.length : null,
     resolved,
+    resolving: !resolved && Boolean(spec.tag),
+    resolvePage: 1,
+    resolveBuffer: [],
     cursor: 0,
     done: resolved && ids.length === 0,
     errors: [],
@@ -99,18 +119,32 @@ async function createBulkJob(spec) {
   return job;
 }
 
+// Advance tag-based resolution by up to RESOLVE_PAGES_PER_CALL pages.
+async function resolveNextPages(job) {
+  if (job.resolved || !job.tag) return;
+  job.resolving = true;
+  job.resolveBuffer = job.resolveBuffer || [];
+
+  for (let i = 0; i < RESOLVE_PAGES_PER_CALL; i++) {
+    const { batch } = await ghl.searchContactsByTagPage(job.tag, job.resolvePage, RESOLVE_PAGE_LIMIT);
+    job.resolveBuffer.push(...batch);
+    if (batch.length < RESOLVE_PAGE_LIMIT) {
+      finalizeResolvedIds(job);
+      return;
+    }
+    job.resolvePage += 1;
+  }
+}
+
 // Process the next `chunkSize` contacts of a job. Safe to call repeatedly.
-// Resolves tag-based targets lazily on the first call.
 async function processBulkJob(jobId, chunkSize = BULK_DEFAULT_CHUNK) {
   const job = await kvGet(`bulk:${jobId}`);
   if (!job) return { error: 'Job not found or expired.' };
 
   if (!job.resolved) {
-    job.ids = await resolveTargets({ tag: job.tag, allTags: job.allTags });
-    job.total = job.ids.length;
-    job.resolved = true;
-    job.done = job.total === 0;
+    await resolveNextPages(job);
     await kvSet(`bulk:${jobId}`, job, { ex: TTL });
+    if (!job.resolved) return jobStatus(job);
   }
 
   if (job.done) return jobStatus(job);
@@ -119,7 +153,6 @@ async function processBulkJob(jobId, chunkSize = BULK_DEFAULT_CHUNK) {
   const end = Math.min(start + Math.max(1, chunkSize), job.total);
   const slice = job.ids.slice(start, end);
 
-  // One contact at a time, pause after each — keeps us under GHL rate limits.
   for (const id of slice) {
     try {
       if (job.op === 'update_contact') await ghl.updateContact(id, job.fields);
@@ -137,11 +170,22 @@ async function processBulkJob(jobId, chunkSize = BULK_DEFAULT_CHUNK) {
   return jobStatus(job);
 }
 
+function bulkQueuedMessage(job) {
+  const count = job.total == null ? 'the matching' : job.total;
+  if (job.total === 0) return 'No matching contacts found, nothing to change.';
+  if (job.op === 'update_contact') {
+    return `Queued an update for ${count} contacts. Processing now — watch the progress bar below.`;
+  }
+  const mode = job.op === 'remove_tags' ? 'remove tag(s) from' : 'add tag(s) to';
+  return `Queued ${mode} ${count} contacts. Processing now — watch the progress bar below.`;
+}
+
 module.exports = {
   createBulkJob,
   processBulkJob,
   resolveTargets,
   kvAvailable,
+  bulkQueuedMessage,
   BULK_DEFAULT_CHUNK,
   BULK_DELAY_MS,
 };

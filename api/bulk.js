@@ -1,8 +1,6 @@
-// Endpoint that processes bulk-action jobs one small chunk per request.
-// The client calls this repeatedly until the job reports done, keeping every
-// request well under the serverless timeout.
+// Endpoint that creates and processes bulk-action jobs in small fast requests.
 const { ghlConfigured } = require('./_lib/ghl-client');
-const { processBulkJob } = require('./_lib/bulk');
+const { createBulkJob, processBulkJob, bulkQueuedMessage } = require('./_lib/bulk');
 
 async function readBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -28,6 +26,32 @@ module.exports = async function handler(req, res) {
 
   try {
     const body = await readBody(req);
+
+    if (body.action === 'create') {
+      const op = body.op;
+      if (!op) {
+        res.status(400).json({ ok: false, error: 'Missing op.' });
+        return;
+      }
+      const job = await createBulkJob({
+        op,
+        fields: body.fields,
+        tags: body.tags,
+        contactIds: body.contactIds,
+        tag: body.tag,
+        allTags: body.allTags,
+      });
+      res.status(200).json({
+        ok: true,
+        jobId: job.id,
+        op: job.op,
+        total: job.total,
+        message: bulkQueuedMessage(job),
+        bulkJob: { id: job.id, total: job.total, op: job.op },
+      });
+      return;
+    }
+
     if (body.action === 'process') {
       if (!body.jobId) {
         res.status(400).json({ ok: false, error: 'Missing jobId.' });
@@ -42,6 +66,7 @@ module.exports = async function handler(req, res) {
       res.status(200).json({ ok: true, ...status });
       return;
     }
+
     res.status(400).json({ ok: false, error: 'Unknown action.' });
   } catch (err) {
     res.status(500).json({ ok: false, error: String((err && err.message) || err) });

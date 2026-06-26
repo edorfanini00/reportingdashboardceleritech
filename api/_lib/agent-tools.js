@@ -47,7 +47,7 @@ const tools = [
   {
     name: 'search_by_tag',
     write: false,
-    description: 'Find ALL contacts that have a specific tag (paginates through every result, not limited to 20). If multiple tags are provided, returns only contacts that have ALL of them (AND logic). Much more reliable than search_contacts for tag-based queries.',
+    description: 'Find contacts that have a specific tag. Returns a sample only — for bulk updates on many contacts, do NOT use this; pass the tag directly to bulk_update_contacts or bulk_tag_contacts instead.',
     input_schema: {
       type: 'object',
       properties: {
@@ -57,7 +57,7 @@ const tools = [
       required: ['tag'],
     },
     async run({ tag, allTags }) {
-      let results = await ghl.searchByTagEquals(tag);
+      let results = await ghl.searchByTagEquals(tag, 100, 2);
       if (Array.isArray(allTags) && allTags.length > 1) {
         const required = allTags.map(t => t.toLowerCase());
         results = results.filter(c => {
@@ -78,7 +78,7 @@ const tools = [
         count: results.length,
         contactIds: ids,
         sample,
-        note: results.length > 25 ? `Showing 25 of ${results.length}. To act on all of them, pass tag (+allTags) or these contactIds to a bulk tool.` : undefined,
+        note: results.length >= 200 ? 'Sample only (first 200). For bulk actions pass tag directly to bulk_update_contacts — do not pass these ids.' : undefined,
       };
     },
   },

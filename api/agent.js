@@ -15,9 +15,37 @@ async function kvSet(key, value, opts) {
   if (!_kv) return;
   try { await _kv.set(key, value, opts); } catch { /* best-effort */ }
 }
+async function kvDel(key) {
+  if (!_kv) return;
+  try { await _kv.del(key); } catch { /* best-effort */ }
+}
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MAX_STEPS = 10;
+const BULK_TOOLS = new Set(['bulk_update_contacts', 'bulk_tag_contacts']);
+const CONFIRM_RE = /^(yes|y|yeah|yep|confirm|confirmed|go ahead|do it|proceed|ok|okay|sure|approve|approved)\.?!?$/i;
+
+function isConfirmMessage(text) {
+  return CONFIRM_RE.test(String(text || '').trim());
+}
+
+function formatBulkPreviewReply(toolName, input) {
+  const target = input.tag
+    ? `all contacts with tag "${input.tag}"`
+    : `${(input.contactIds || []).length} contact(s)`;
+  if (toolName === 'bulk_update_contacts') {
+    const fields = input.fields ? JSON.stringify(input.fields) : 'fields';
+    return `Ready to update ${target} → ${fields}.\n\nReply **yes** to start processing.`;
+  }
+  const mode = input.mode === 'remove' ? 'remove' : 'add';
+  const tags = Array.isArray(input.tags) ? input.tags.join(', ') : String(input.tags || '');
+  return `Ready to ${mode} tag(s) "${tags}" on ${target}.\n\nReply **yes** to start processing.`;
+}
+
+function bulkJobFromResult(result) {
+  if (!result || !result.bulkJobId || !(result.total == null || result.total > 0)) return null;
+  return { id: result.bulkJobId, total: result.total ?? null, op: result.op };
+}
 
 const AVAILABLE_MODELS = [
   { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
@@ -214,6 +242,28 @@ module.exports = async function handler(req, res) {
     }
     messages.push({ role: 'user', content: userText });
 
+    // Confirming a bulk action — skip Claude entirely (avoids serverless timeout).
+    if (isConfirmMessage(userText)) {
+      const pending = await kvGet(`pending:${chatId}`);
+      if (pending && BULK_TOOLS.has(pending.tool)) {
+        const result = await runTool(pending.tool, { ...pending.input, confirmed: true });
+        await kvDel(`pending:${chatId}`);
+        const reply = (result && result.message) || 'Bulk job queued.';
+        const bulkJob = bulkJobFromResult(result);
+        messages.push({ role: 'assistant', content: reply });
+        await kvSet(kvKey, messages, { ex: KV_TTL });
+        res.status(200).json({
+          ok: true,
+          reply,
+          actions: [{ tool: pending.tool, input: pending.input, executed: !!(result && result.ok), preview: false }],
+          chatId,
+          model: preferredModel,
+          bulkJob,
+        });
+        return;
+      }
+    }
+
     const preferredModel = body.model || DEFAULT_MODEL;
     const actions = [];
     let usedModel = preferredModel;
@@ -273,12 +323,18 @@ module.exports = async function handler(req, res) {
       });
       const toolResults = [];
       let bulkReply = null;
+      let pendingBulkPreview = null;
       for (const { block, result } of executed) {
         const didRun = !(result && result.preview) && !(result && result.error);
         actions.push({ tool: block.name, input: block.input, executed: didRun, preview: !!(result && result.preview) });
         if (result && result.bulkJobId && (result.total == null || result.total > 0)) {
           bulkJob = { id: result.bulkJobId, total: result.total ?? null, op: result.op };
           if (result.ok && result.message) bulkReply = result.message;
+        }
+        if (result && result.preview && BULK_TOOLS.has(block.name)) {
+          const input = block.input || result.proposed || {};
+          pendingBulkPreview = { tool: block.name, input, reply: formatBulkPreviewReply(block.name, input) };
+          await kvSet(`pending:${chatId}`, { tool: block.name, input }, { ex: KV_TTL });
         }
         toolResults.push({
           type: 'tool_result',
@@ -287,6 +343,19 @@ module.exports = async function handler(req, res) {
         });
       }
       messages.push({ role: 'user', content: toolResults });
+
+      if (pendingBulkPreview) {
+        await kvSet(kvKey, messages, { ex: KV_TTL });
+        res.status(200).json({
+          ok: true,
+          reply: pendingBulkPreview.reply,
+          actions,
+          chatId,
+          model: usedModel,
+          fallback: usedModel !== preferredModel,
+        });
+        return;
+      }
 
       // Bulk job queued — return immediately so the client can run /api/bulk
       // without waiting for another Claude round-trip (which often hits 504).

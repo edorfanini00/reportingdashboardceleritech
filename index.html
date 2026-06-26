@@ -554,6 +554,49 @@ function switchTab(tabId) {
 
 /* ---------------- AI Assistant chat ---------------- */
 let chatHistory = [];
+let pendingBulkConfirm = null;
+
+function isConfirmMessage(text) {
+  return /^(yes|y|yeah|yep|confirm|confirmed|go ahead|do it|proceed|ok|okay|sure|approve|approved)\.?!?$/i.test(String(text || '').trim());
+}
+
+function capturePendingBulk(actions) {
+  if (!actions || !actions.length) return;
+  for (let i = actions.length - 1; i >= 0; i--) {
+    const a = actions[i];
+    if (a.preview && (a.tool === 'bulk_update_contacts' || a.tool === 'bulk_tag_contacts') && a.input) {
+      pendingBulkConfirm = { tool: a.tool, input: a.input };
+      return;
+    }
+  }
+}
+
+async function queueBulkDirect(pending) {
+  const body = { action: 'create' };
+  if (pending.tool === 'bulk_update_contacts') {
+    body.op = 'update_contact';
+    body.fields = pending.input.fields;
+    body.tag = pending.input.tag;
+    body.allTags = pending.input.allTags;
+    body.contactIds = pending.input.contactIds;
+  } else {
+    body.op = pending.input.mode === 'remove' ? 'remove_tags' : 'add_tags';
+    body.tags = pending.input.tags;
+    body.tag = pending.input.tag;
+    body.allTags = pending.input.allTags;
+    body.contactIds = pending.input.contactIds;
+  }
+  const r = await fetch('/api/bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const raw = await r.text();
+  let data;
+  try { data = JSON.parse(raw); } catch { data = null; }
+  if (!data || !data.ok) throw new Error((data && data.error) || 'Could not queue bulk job.');
+  return data;
+}
 let chatId = null;
 let chatBusy = false;
 let selectedModel = '';
@@ -637,6 +680,7 @@ function useSuggestion(btn) { const inp = document.getElementById('chatInput'); 
 function resetChat() {
   chatHistory = [];
   chatId = null;
+  pendingBulkConfirm = null;
   const box = document.getElementById('chatMessages');
   if (box) box.innerHTML = '';
   renderSuggestions();
@@ -683,6 +727,7 @@ function removeTyping() { const t = document.getElementById('chatTyping'); if (t
 
 function addActionLog(actions) {
   if (!actions || !actions.length) return;
+  capturePendingBulk(actions);
   const box = document.getElementById('chatMessages');
   const wrap = document.createElement('div');
   wrap.className = 'flex justify-start';
@@ -775,6 +820,11 @@ async function runBulkJob(job) {
     processed = d.processed;
     total = d.total;
     lastErrCount = d.errorCount || 0;
+    if (d.resolving) {
+      updateProgressBar(bar, processed, total, 'Finding contacts…');
+      await new Promise(r => setTimeout(r, 350));
+      continue;
+    }
     if (total === 0) {
       updateProgressBar(bar, 0, 0, 'No matching contacts found.');
       return;
@@ -818,6 +868,28 @@ async function sendChat(e) {
   chatHistory.push({ role: 'user', content: text });
   renderSuggestions();
   addTyping();
+
+  // Confirm bulk locally — bypasses /api/agent so it never hits the serverless timeout.
+  if (isConfirmMessage(text) && pendingBulkConfirm) {
+    const pending = pendingBulkConfirm;
+    pendingBulkConfirm = null;
+    try {
+      const data = await queueBulkDirect(pending);
+      removeTyping();
+      addChatBubble('assistant', data.message || 'Bulk job queued.');
+      chatHistory.push({ role: 'assistant', content: data.message || 'Bulk job queued.' });
+      if (data.bulkJob && data.bulkJob.id && (data.bulkJob.total == null || data.bulkJob.total > 0)) await runBulkJob(data.bulkJob);
+    } catch (err) {
+      removeTyping();
+      pendingBulkConfirm = pending;
+      addChatBubble('assistant', '⚠️ Could not start bulk job: ' + err.message);
+    } finally {
+      chatBusy = false;
+      document.getElementById('chatSendBtn').disabled = false;
+      inp.focus();
+    }
+    return false;
+  }
 
   try {
     const payload = { message: text, model: selectedModel };

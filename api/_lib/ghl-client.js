@@ -14,6 +14,22 @@ function getCredentials() {
   };
 }
 
+// GHL burst limit is ~100 requests / 10s per location. Retry 429s with backoff.
+async function fetchWithRetry(url, options, { maxRetries = 4 } = {}) {
+  let res;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    res = await fetch(url, options);
+    if (res.status !== 429) return res;
+    if (attempt === maxRetries) return res;
+    const retryAfter = parseInt(res.headers.get('Retry-After') || res.headers.get('retry-after') || '0', 10);
+    const waitMs = retryAfter > 0
+      ? retryAfter * 1000
+      : Math.min(10000, 1000 * Math.pow(2, attempt)) + Math.random() * 500;
+    await new Promise(r => setTimeout(r, waitMs));
+  }
+  return res;
+}
+
 async function searchPage({ page, pageLimit, filters, searchAfter, query }) {
   const { token, locationId } = getCredentials();
   const body = { locationId, pageLimit };
@@ -148,23 +164,15 @@ function authHeaders() {
   };
 }
 
-// GHL burst limit is ~100 requests / 10s per location. Retry 429s with backoff.
-async function fetchWithRetry(url, options, { maxRetries = 4 } = {}) {
-  let res;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    res = await fetch(url, options);
-    if (res.status !== 429) return res;
-    if (attempt === maxRetries) return res;
-    const retryAfter = parseInt(res.headers.get('Retry-After') || res.headers.get('retry-after') || '0', 10);
-    const waitMs = retryAfter > 0
-      ? retryAfter * 1000
-      : Math.min(10000, 1000 * Math.pow(2, attempt)) + Math.random() * 500;
-    await new Promise(r => setTimeout(r, waitMs));
-  }
-  return res;
+// One page of contacts with an exact tag match (used by incremental bulk resolve).
+async function searchContactsByTagPage(tag, page, pageLimit = 100) {
+  return searchPage({
+    page,
+    pageLimit,
+    filters: [{ field: 'tags', operator: 'eq', value: tag }],
+  });
 }
 
-// Keep only the last 10 digits so "+1 (555) 123-4567" matches "5551234567".
 function normalizePhone(value) {
   const digits = String(value || '').replace(/\D/g, '');
   return digits.length > 10 ? digits.slice(-10) : digits;
@@ -663,6 +671,7 @@ module.exports = {
   fetchCustomFieldMap,
   collectTagSamples,
   searchPage,
+  searchContactsByTagPage,
   searchContacts,
   searchContactsByEmail,
   searchContactsByPhone,
