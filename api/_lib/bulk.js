@@ -21,6 +21,11 @@ async function kvSet(key, value, opts) {
 const TTL = 3600; // jobs expire after 1h
 const VALID_OPS = ['update_contact', 'add_tags', 'remove_tags'];
 
+// GHL burst limit ≈ 100 requests / 10s per location. Process one contact at a
+// time with a pause between each so bulk jobs complete without 429s.
+const BULK_DELAY_MS = 600; // ~1.6 contacts/sec — well under the burst ceiling
+const BULK_DEFAULT_CHUNK = 3;
+
 function kvAvailable() {
   return Boolean(_kv);
 }
@@ -96,7 +101,7 @@ async function createBulkJob(spec) {
 
 // Process the next `chunkSize` contacts of a job. Safe to call repeatedly.
 // Resolves tag-based targets lazily on the first call.
-async function processBulkJob(jobId, chunkSize = 8) {
+async function processBulkJob(jobId, chunkSize = BULK_DEFAULT_CHUNK) {
   const job = await kvGet(`bulk:${jobId}`);
   if (!job) return { error: 'Job not found or expired.' };
 
@@ -114,22 +119,17 @@ async function processBulkJob(jobId, chunkSize = 8) {
   const end = Math.min(start + Math.max(1, chunkSize), job.total);
   const slice = job.ids.slice(start, end);
 
-  // Bounded concurrency (4) to avoid GHL burst rate limits.
-  const CONCURRENCY = 4;
-  let idx = 0;
-  async function worker() {
-    while (idx < slice.length) {
-      const id = slice[idx++];
-      try {
-        if (job.op === 'update_contact') await ghl.updateContact(id, job.fields);
-        else if (job.op === 'add_tags') await ghl.addTagsToContact(id, job.tags);
-        else if (job.op === 'remove_tags') await ghl.removeTagsFromContact(id, job.tags);
-      } catch (e) {
-        job.errors.push({ id, error: String((e && e.message) || e) });
-      }
+  // One contact at a time, pause after each — keeps us under GHL rate limits.
+  for (const id of slice) {
+    try {
+      if (job.op === 'update_contact') await ghl.updateContact(id, job.fields);
+      else if (job.op === 'add_tags') await ghl.addTagsToContact(id, job.tags);
+      else if (job.op === 'remove_tags') await ghl.removeTagsFromContact(id, job.tags);
+    } catch (e) {
+      job.errors.push({ id, error: String((e && e.message) || e) });
     }
+    if (BULK_DELAY_MS) await new Promise(r => setTimeout(r, BULK_DELAY_MS));
   }
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, slice.length) }, worker));
 
   job.cursor = end;
   job.done = job.cursor >= job.total;
@@ -137,4 +137,11 @@ async function processBulkJob(jobId, chunkSize = 8) {
   return jobStatus(job);
 }
 
-module.exports = { createBulkJob, processBulkJob, resolveTargets, kvAvailable };
+module.exports = {
+  createBulkJob,
+  processBulkJob,
+  resolveTargets,
+  kvAvailable,
+  BULK_DEFAULT_CHUNK,
+  BULK_DELAY_MS,
+};

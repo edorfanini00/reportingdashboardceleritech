@@ -33,7 +33,7 @@ module.exports = async function handler(req, res) {
         res.status(400).json({ ok: false, error: 'Missing jobId.' });
         return;
       }
-      const chunk = Math.min(Math.max(1, Number(body.chunk) || 8), 25);
+      const chunk = Math.min(Math.max(1, Number(body.chunk) || 3), 10);
       const status = await processBulkJob(body.jobId, chunk);
       if (status.error) {
         res.status(404).json({ ok: false, error: status.error });

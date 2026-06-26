@@ -751,7 +751,8 @@ async function runBulkJob(job) {
   let processed = 0;
   let total = job.total;
   let lastErrCount = 0;
-  const CHUNK = 10;
+  const CHUNK = 3;
+  const CHUNK_PAUSE_MS = 400; // extra breathing room between server round-trips
 
   while (true) {
     let d;
@@ -778,7 +779,7 @@ async function runBulkJob(job) {
       updateProgressBar(bar, 0, 0, 'No matching contacts found.');
       return;
     }
-    updateProgressBar(bar, processed, total, 'Processing… ' + (lastErrCount ? '(' + lastErrCount + ' errors)' : ''));
+    updateProgressBar(bar, processed, total, 'Processing slowly (rate-limit safe)…' + (lastErrCount ? ' (' + lastErrCount + ' errors)' : ''));
     if (d.done) {
       const ok = total - lastErrCount;
       const msg = lastErrCount
@@ -787,10 +788,16 @@ async function runBulkJob(job) {
       updateProgressBar(bar, processed, total, msg, lastErrCount > 0);
       if (lastErrCount && d.errors && d.errors.length) {
         const first = d.errors[0];
-        addChatBubble('assistant', '⚠️ The updates failed. First error: `' + (first.error || 'unknown') + '` (contact ' + (first.id || '?') + '). This usually means a permissions/scope or field-format issue on the GoHighLevel side.');
+        const errMsg = first.error || 'unknown';
+        const is429 = /429|Too Many Requests/i.test(errMsg);
+        const hint = is429
+          ? 'GoHighLevel rate-limited the request (too many API calls in a short window). Wait about a minute and ask the assistant to retry — most contacts may already have been updated.'
+          : 'This usually means a permissions/scope or field-format issue on the GoHighLevel side.';
+        addChatBubble('assistant', '⚠️ Some updates failed. First error: `' + errMsg + '` (contact ' + (first.id || '?') + '). ' + hint);
       }
       return;
     }
+    if (CHUNK_PAUSE_MS) await new Promise(r => setTimeout(r, CHUNK_PAUSE_MS));
   }
 }
 

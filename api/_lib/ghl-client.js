@@ -148,6 +148,22 @@ function authHeaders() {
   };
 }
 
+// GHL burst limit is ~100 requests / 10s per location. Retry 429s with backoff.
+async function fetchWithRetry(url, options, { maxRetries = 4 } = {}) {
+  let res;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    res = await fetch(url, options);
+    if (res.status !== 429) return res;
+    if (attempt === maxRetries) return res;
+    const retryAfter = parseInt(res.headers.get('Retry-After') || res.headers.get('retry-after') || '0', 10);
+    const waitMs = retryAfter > 0
+      ? retryAfter * 1000
+      : Math.min(10000, 1000 * Math.pow(2, attempt)) + Math.random() * 500;
+    await new Promise(r => setTimeout(r, waitMs));
+  }
+  return res;
+}
+
 // Keep only the last 10 digits so "+1 (555) 123-4567" matches "5551234567".
 function normalizePhone(value) {
   const digits = String(value || '').replace(/\D/g, '');
@@ -327,7 +343,7 @@ async function normalizeContactFields(fields) {
 // Non-standard keys are routed to customFields automatically.
 async function updateContact(contactId, fields) {
   const payload = await normalizeContactFields(fields);
-  const res = await fetch(`${GHL_BASE}/contacts/${contactId}`, {
+  const res = await fetchWithRetry(`${GHL_BASE}/contacts/${contactId}`, {
     method: 'PUT',
     headers: authHeaders(),
     body: JSON.stringify(payload),
@@ -342,7 +358,7 @@ async function updateContact(contactId, fields) {
 // Add one or more tags to a contact (idempotent on GHL's side).
 async function addTagsToContact(contactId, tags) {
   const list = Array.isArray(tags) ? tags : [tags];
-  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/tags`, {
+  const res = await fetchWithRetry(`${GHL_BASE}/contacts/${contactId}/tags`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ tags: list }),
@@ -357,7 +373,7 @@ async function addTagsToContact(contactId, tags) {
 // Remove one or more tags from a contact.
 async function removeTagsFromContact(contactId, tags) {
   const list = Array.isArray(tags) ? tags : [tags];
-  const res = await fetch(`${GHL_BASE}/contacts/${contactId}/tags`, {
+  const res = await fetchWithRetry(`${GHL_BASE}/contacts/${contactId}/tags`, {
     method: 'DELETE',
     headers: authHeaders(),
     body: JSON.stringify({ tags: list }),
