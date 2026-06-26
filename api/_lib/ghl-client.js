@@ -23,7 +23,7 @@ async function searchPage({ page, pageLimit, filters, searchAfter, query }) {
   if (filters) body.filters = filters;
   if (query) body.query = query;
 
-  const res = await fetch(GHL_API, {
+  const res = await fetchWithRetry(GHL_API, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,

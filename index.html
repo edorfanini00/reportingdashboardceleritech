@@ -835,7 +835,7 @@ async function sendChat(e) {
       removeTyping();
       const timedOut = r.status === 504 || /timed out|timeout|FUNCTION_INVOCATION/i.test(raw);
       if (timedOut) {
-        addChatBubble('assistant', '⚠️ That action took too long and the server timed out. This can happen with large batch operations — try breaking it into smaller chunks (e.g. update 5-10 contacts at a time). Your previous changes were likely still applied.');
+        addChatBubble('assistant', '⚠️ The assistant request timed out before it could respond. If you just confirmed a bulk action, wait a moment and check for a progress bar below — the job may still have started. Otherwise say "continue" or retry the action.');
       } else {
         addChatBubble('assistant', '⚠️ Server error (' + r.status + '). Please try again in a moment.');
       }
@@ -854,7 +854,7 @@ async function sendChat(e) {
       addActionLog(data.actions);
       addChatBubble('assistant', data.reply);
       chatHistory.push({ role: 'assistant', content: data.reply });
-      if (data.bulkJob && data.bulkJob.id && data.bulkJob.total !== 0) {
+      if (data.bulkJob && data.bulkJob.id && (data.bulkJob.total == null || data.bulkJob.total > 0)) {
         await runBulkJob(data.bulkJob);
       }
     }

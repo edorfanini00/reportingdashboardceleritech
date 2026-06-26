@@ -62,8 +62,8 @@ Rules:
 - Use the read tools freely to look things up (search_contacts, search_by_tag, get_contact, list_pipelines, list_users, list_workflows, list_calendars, list_tags, list_custom_fields, search_opportunities, get_opportunity, get_notes, get_tasks, list_conversations, get_messages).
 - IMPORTANT: When searching for contacts by tag, ALWAYS use search_by_tag instead of search_contacts. search_contacts is capped at 20 results and uses free-text which misses contacts. search_by_tag paginates through ALL contacts with that tag. For multiple tags, pass allTags to get only contacts with ALL specified tags.
 - CRITICAL: To change MANY contacts at once (more than ~3) — e.g. set a source for everyone with a tag, or add/remove a tag in bulk — you MUST use bulk_update_contacts or bulk_tag_contacts. NEVER loop update_contact/add_tags/remove_tags one contact at a time for many contacts; that WILL time out the request. The bulk tools queue a background job that the dashboard processes automatically in chunks, so ONE confirmation handles any number of contacts.
-  - PREFERRED: if you already fetched the contacts with search_by_tag, pass their ids as contactIds to the bulk tool — that makes it instant.
-  - Otherwise pass tag (+ allTags for AND filtering) and the dashboard will resolve the targets itself.
+  - Do NOT call search_by_tag before a bulk action — it is slow and can time out the chat. Pass tag (+ allTags for AND filtering) directly to the bulk tool; the dashboard resolves targets in the background.
+  - Only pass contactIds if the user gave you a short explicit list (under ~20). Never pass hundreds of ids from a prior search.
   - After queueing, in ONE short sentence tell the user it's now processing with live progress. Do NOT call any tools to verify the results afterward and do NOT re-search — the dashboard handles it.
   - If the user asks again or asks to retry, ALWAYS create a fresh bulk job by calling the tool again. NEVER tell the user a previous job is "already processing" or "no need to re-run" — always re-queue.
 - CONTACT FIELDS: Standard contact fields are firstName, lastName, name, email, phone, companyName, address1, city, state, country, postalCode, website, source, tags, assignedTo. "Pipeline", "stage", and opportunity-related values are NOT contact fields — those belong on opportunities (use create_opportunity/update_opportunity). For any other custom field (e.g. "Industry", a custom "Country" field, etc.), it is treated as a custom field automatically by name — but if you are unsure a field exists, call list_custom_fields first. If an update fails with "Unknown contact field", tell the user that field doesn't exist on contacts and suggest list_custom_fields or an opportunity update.
@@ -272,11 +272,13 @@ module.exports = async function handler(req, res) {
         return { block, result };
       });
       const toolResults = [];
+      let bulkReply = null;
       for (const { block, result } of executed) {
         const didRun = !(result && result.preview) && !(result && result.error);
         actions.push({ tool: block.name, input: block.input, executed: didRun, preview: !!(result && result.preview) });
-        if (result && result.bulkJobId && result.total !== 0) {
-          bulkJob = { id: result.bulkJobId, total: result.total || null, op: result.op };
+        if (result && result.bulkJobId && (result.total == null || result.total > 0)) {
+          bulkJob = { id: result.bulkJobId, total: result.total ?? null, op: result.op };
+          if (result.ok && result.message) bulkReply = result.message;
         }
         toolResults.push({
           type: 'tool_result',
@@ -285,6 +287,22 @@ module.exports = async function handler(req, res) {
         });
       }
       messages.push({ role: 'user', content: toolResults });
+
+      // Bulk job queued — return immediately so the client can run /api/bulk
+      // without waiting for another Claude round-trip (which often hits 504).
+      if (bulkJob && bulkReply) {
+        await kvSet(kvKey, messages, { ex: KV_TTL });
+        res.status(200).json({
+          ok: true,
+          reply: bulkReply,
+          actions,
+          chatId,
+          model: usedModel,
+          fallback: usedModel !== preferredModel,
+          bulkJob,
+        });
+        return;
+      }
     }
 
     await kvSet(kvKey, messages, { ex: KV_TTL });

@@ -259,7 +259,7 @@ const tools = [
   {
     name: 'bulk_update_contacts',
     write: true,
-    description: 'Update the SAME fields on MANY contacts at once (e.g. set source for every contact with a tag). ALWAYS use this instead of calling update_contact repeatedly when changing more than ~3 contacts — it processes in the background in chunks so it never times out, no matter how many contacts. Provide EITHER contactIds (explicit list) OR tag (+ optional allTags for AND filtering). Set confirmed=true ONLY after the user approves.',
+    description: 'Update the SAME fields on MANY contacts at once (e.g. set source for every contact with a tag). ALWAYS use this instead of calling update_contact repeatedly when changing more than ~3 contacts — it processes in the background in chunks so it never times out, no matter how many contacts. Provide tag (+ optional allTags) for the dashboard to resolve targets in the background; only pass contactIds for a short explicit list (under ~20). Do NOT call search_by_tag first. Set confirmed=true ONLY after the user approves.',
     input_schema: {
       type: 'object',
       properties: {
