@@ -714,12 +714,16 @@ function addChatBubble(role, text) {
   return wrap;
 }
 
-function addTyping() {
+function addTyping(label) {
+  removeTyping();
   const box = document.getElementById('chatMessages');
   const wrap = document.createElement('div');
   wrap.className = 'flex justify-start';
   wrap.id = 'chatTyping';
-  wrap.innerHTML = '<div class="bg-white border border-slate-100 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm"><div class="flex gap-1"><span class="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style="animation-delay:0ms"></span><span class="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style="animation-delay:150ms"></span><span class="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style="animation-delay:300ms"></span></div></div>';
+  const labelHtml = label
+    ? '<span class="text-[11px] font-semibold text-slate-400 ml-1">' + escapeHtml(label) + '</span>'
+    : '';
+  wrap.innerHTML = '<div class="bg-white border border-slate-100 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm flex items-center gap-1"><div class="flex gap-1"><span class="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style="animation-delay:0ms"></span><span class="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style="animation-delay:150ms"></span><span class="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style="animation-delay:300ms"></span></div>' + labelHtml + '</div>';
   box.appendChild(wrap);
   box.scrollTop = box.scrollHeight;
 }
@@ -910,7 +914,7 @@ async function postToAgent(text, isAuto) {
     chatHistory.push({ role: 'user', content: text });
     renderSuggestions();
   }
-  addTyping();
+  addTyping(isAuto ? 'Still working on it…' : undefined);
 
   try {
     const payload = isAuto
