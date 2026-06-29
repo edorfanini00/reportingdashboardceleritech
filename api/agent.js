@@ -123,11 +123,19 @@ function toAnthropicMessages(history) {
     .map(m => ({ role: m.role, content: m.content }));
 }
 
-const CLAUDE_CALL_TIMEOUT_MS = 28000;
+const CLAUDE_CALL_TIMEOUT_MS = 24000;
+// Total wall-clock budget for the whole request. Must stay safely under
+// Vercel's 60s hard maxDuration so we always return parseable JSON instead of
+// an HTML 504 page (which the client can only show as a generic timeout).
+const FUNCTION_BUDGET_MS = 50000;
+// Buffer reserved after a model call for tool execution + writing the response.
+const RESPONSE_BUFFER_MS = 4000;
+// Don't even start another model round-trip unless this much budget remains.
+const MIN_STEP_BUDGET_MS = 9000;
 
-async function callClaude(apiKey, messages, model) {
+async function callClaude(apiKey, messages, model, timeoutMs = CLAUDE_CALL_TIMEOUT_MS) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), CLAUDE_CALL_TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), Math.max(1000, timeoutMs));
   let res;
   try {
     res = await fetch(ANTHROPIC_URL, {
@@ -181,12 +189,21 @@ async function mapWithConcurrency(items, limit, worker) {
   return results;
 }
 
-async function callClaudeWithFallback(apiKey, messages, preferredModel) {
+async function callClaudeWithFallback(apiKey, messages, preferredModel, deadlineAt) {
   const chain = buildFallbackOrder(preferredModel);
   let lastErr;
   for (const model of chain) {
+    // Cap each call to the time we have left (minus a buffer for the response),
+    // and stop trying more models once the budget is too small to finish one.
+    const remaining = deadlineAt - Date.now() - RESPONSE_BUFFER_MS;
+    if (remaining < MIN_STEP_BUDGET_MS) {
+      const e = lastErr || new Error('Ran out of time budget before the model responded.');
+      e.budgetExhausted = true;
+      throw e;
+    }
+    const timeoutMs = Math.min(CLAUDE_CALL_TIMEOUT_MS, remaining);
     try {
-      const result = await callClaude(apiKey, messages, model);
+      const result = await callClaude(apiKey, messages, model, timeoutMs);
       return { result, model };
     } catch (err) {
       lastErr = err;
@@ -269,28 +286,45 @@ module.exports = async function handler(req, res) {
     let usedModel = preferredModel;
     let bulkJob = null;
     const START = Date.now();
-    const DEADLINE_MS = 42000; // return gracefully before Vercel's 60s hard cap
+    const deadlineAt = START + FUNCTION_BUDGET_MS;
+
+    // Return a clean JSON "still working" response instead of letting Vercel
+    // hard-timeout and serve an unparseable HTML 504 page.
+    const returnGracefully = async () => {
+      await kvSet(kvKey, messages, { ex: KV_TTL });
+      res.status(200).json({
+        ok: true,
+        reply: bulkJob
+          ? "The bulk job is queued and the dashboard is processing it below."
+          : "I'm still working on this — it's a large request. Say \"continue\" and I'll pick up where I left off.",
+        actions,
+        chatId,
+        model: usedModel,
+        fallback: usedModel !== preferredModel,
+        bulkJob,
+      });
+    };
 
     for (let step = 0; step < MAX_STEPS; step++) {
-      // If we're running low on time, stop and return cleanly rather than
-      // letting Vercel hard-timeout (which returns an HTML error page).
-      if (Date.now() - START > DEADLINE_MS) {
-        await kvSet(kvKey, messages, { ex: KV_TTL });
-        res.status(200).json({
-          ok: true,
-          reply: bulkJob
-            ? "The bulk job is queued and the dashboard is processing it below."
-            : "I'm still working on this — it's a large request. Say \"continue\" and I'll pick up where I left off.",
-          actions,
-          chatId,
-          model: usedModel,
-          fallback: usedModel !== preferredModel,
-          bulkJob,
-        });
+      // Don't start a model round-trip we can't finish before the budget runs
+      // out; return cleanly so the client always gets parseable JSON.
+      if (deadlineAt - Date.now() < MIN_STEP_BUDGET_MS) {
+        await returnGracefully();
         return;
       }
 
-      const { result: reply, model: actualModel } = await callClaudeWithFallback(apiKey, messages, usedModel);
+      let reply, actualModel;
+      try {
+        ({ result: reply, model: actualModel } = await callClaudeWithFallback(apiKey, messages, usedModel, deadlineAt));
+      } catch (err) {
+        // Out of time / model unreachable: degrade to a graceful response rather
+        // than a 500 or a hard timeout.
+        if (err && (err.budgetExhausted || err.status === 503 || err.status === 529)) {
+          await returnGracefully();
+          return;
+        }
+        throw err;
+      }
       usedModel = actualModel;
 
       messages.push({ role: 'assistant', content: reply.content });
