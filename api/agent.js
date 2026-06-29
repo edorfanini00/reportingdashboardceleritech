@@ -337,6 +337,10 @@ module.exports = async function handler(req, res) {
 
     const START = Date.now();
     const deadlineAt = START + FUNCTION_BUDGET_MS;
+    console.log('[agent] start', JSON.stringify({
+      chatId, isContinue, preferredModel, msgs: messages.length,
+      userText: (body.message || '').slice(0, 160),
+    }));
 
     // Return a clean JSON "still working" response instead of letting Vercel
     // hard-timeout and serve an unparseable HTML 504 page.
@@ -364,10 +368,12 @@ module.exports = async function handler(req, res) {
         return;
       }
 
+      const tCall = Date.now();
       let reply, actualModel;
       try {
         ({ result: reply, model: actualModel } = await callClaudeWithFallback(apiKey, messages, usedModel, deadlineAt));
       } catch (err) {
+        console.log('[agent] claude error', JSON.stringify({ step, elapsed: Date.now() - START, status: err && err.status, msg: String((err && err.message) || err).slice(0, 200) }));
         // Out of time / model unreachable: degrade to a graceful response rather
         // than a 500 or a hard timeout.
         if (err && (err.budgetExhausted || err.status === 503 || err.status === 529)) {
@@ -377,6 +383,11 @@ module.exports = async function handler(req, res) {
         throw err;
       }
       usedModel = actualModel;
+      console.log('[agent] claude replied', JSON.stringify({
+        step, model: usedModel, stop: reply.stop_reason,
+        callMs: Date.now() - tCall, elapsed: Date.now() - START,
+        tools: (reply.content || []).filter(b => b.type === 'tool_use').map(b => b.name),
+      }));
 
       messages.push({ role: 'assistant', content: reply.content });
 
@@ -403,7 +414,14 @@ module.exports = async function handler(req, res) {
       // Execute tool calls with bounded concurrency (5 at a time) so bulk
       // operations like updating 19 contacts finish in seconds, not minutes.
       const executed = await mapWithConcurrency(toolBlocks, 5, async (block) => {
+        const t0 = Date.now();
         const result = await runTool(block.name, block.input || {});
+        console.log('[agent] tool', JSON.stringify({
+          name: block.name, ms: Date.now() - t0,
+          preview: !!(result && result.preview), error: result && result.error ? String(result.error).slice(0, 160) : undefined,
+          bulkJobId: result && result.bulkJobId, total: result && result.total,
+          input: JSON.stringify(block.input || {}).slice(0, 200),
+        }));
         return { block, result };
       });
       // The safety timer may have already responded while tools ran long.
