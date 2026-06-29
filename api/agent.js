@@ -259,6 +259,33 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    // Temporary diagnostic: time a trivial call to each model with the real key.
+    if (body.action === 'probe_models') {
+      const out = [];
+      for (const m of AVAILABLE_MODELS.map(x => x.id)) {
+        const t0 = Date.now();
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 14000);
+        try {
+          const res = await fetch(ANTHROPIC_URL, {
+            method: 'POST',
+            headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+            body: JSON.stringify({ model: m, max_tokens: 8, messages: [{ role: 'user', content: 'Say hi.' }] }),
+            signal: ctrl.signal,
+          });
+          clearTimeout(timer);
+          const txt = await res.text();
+          let usage; try { const j = JSON.parse(txt); usage = j.usage; } catch {}
+          out.push({ model: m, ms: Date.now() - t0, status: res.status, usage, body: res.ok ? undefined : txt.slice(0, 200) });
+        } catch (e) {
+          clearTimeout(timer);
+          out.push({ model: m, ms: Date.now() - t0, error: e.name === 'AbortError' ? 'timeout(14s)' : String(e.message) });
+        }
+      }
+      sendJson(200, { ok: true, probe: out });
+      return;
+    }
+
     const chatId = body.chatId || crypto.randomUUID();
     const kvKey = `chat:${chatId}`;
     const KV_TTL = 3600; // 1 hour
