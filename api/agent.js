@@ -215,18 +215,32 @@ async function callClaudeWithFallback(apiKey, messages, preferredModel, deadline
 
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
+
+  // Single-send guard + safety-net timer. We MUST always return parseable JSON
+  // before Vercel's 60s hard cap; otherwise the client receives an HTML 504 and
+  // can only show a generic "request timed out" message. sendJson ensures we
+  // respond exactly once and cancels the safety timer.
+  let sent = false;
+  let budgetTimer = null;
+  const sendJson = (status, payload) => {
+    if (sent || res.writableEnded) return;
+    sent = true;
+    if (budgetTimer) { clearTimeout(budgetTimer); budgetTimer = null; }
+    res.status(status).json(payload);
+  };
+
   if (req.method !== 'POST') {
-    res.status(405).json({ ok: false, error: 'Use POST' });
+    sendJson(405, { ok: false, error: 'Use POST' });
     return;
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ ok: false, error: 'AI not configured. Add ANTHROPIC_API_KEY in Vercel env vars.' });
+    sendJson(500, { ok: false, error: 'AI not configured. Add ANTHROPIC_API_KEY in Vercel env vars.' });
     return;
   }
   if (!ghlConfigured()) {
-    res.status(500).json({ ok: false, error: 'GoHighLevel not configured. Add GHL_API_KEY and GHL_LOCATION_ID.' });
+    sendJson(500, { ok: false, error: 'GoHighLevel not configured. Add GHL_API_KEY and GHL_LOCATION_ID.' });
     return;
   }
 
@@ -235,13 +249,17 @@ module.exports = async function handler(req, res) {
 
     // GET models list
     if (body.action === 'list_models') {
-      res.status(200).json({ ok: true, models: AVAILABLE_MODELS, default: DEFAULT_MODEL });
+      sendJson(200, { ok: true, models: AVAILABLE_MODELS, default: DEFAULT_MODEL });
       return;
     }
 
     const chatId = body.chatId || crypto.randomUUID();
     const kvKey = `chat:${chatId}`;
     const KV_TTL = 3600; // 1 hour
+    const preferredModel = body.model || DEFAULT_MODEL;
+    const actions = [];
+    let usedModel = preferredModel;
+    let bulkJob = null;
 
     // Load existing conversation from KV, or start fresh.
     let messages = [];
@@ -254,10 +272,28 @@ module.exports = async function handler(req, res) {
     const userText = body.message || (Array.isArray(body.messages) && body.messages.length
       ? body.messages[body.messages.length - 1].content : null);
     if (!userText) {
-      res.status(400).json({ ok: false, error: 'No message provided.' });
+      sendJson(400, { ok: false, error: 'No message provided.' });
       return;
     }
     messages.push({ role: 'user', content: userText });
+
+    // Safety net: even if a model call or a tool (e.g. GHL rate-limit backoff)
+    // runs long, fire a clean JSON response just before the function would be
+    // hard-killed. Background work keeps running but the client gets an answer.
+    budgetTimer = setTimeout(() => {
+      kvSet(kvKey, messages, { ex: KV_TTL }).catch(() => {});
+      sendJson(200, {
+        ok: true,
+        reply: bulkJob
+          ? 'The bulk job is queued and the dashboard is processing it below.'
+          : "I'm still working on this — it's taking longer than usual. Say \"continue\" and I'll pick up where I left off.",
+        actions,
+        chatId,
+        model: usedModel,
+        fallback: usedModel !== preferredModel,
+        bulkJob,
+      });
+    }, FUNCTION_BUDGET_MS);
 
     // Confirming a bulk action — skip Claude entirely (avoids serverless timeout).
     if (isConfirmMessage(userText)) {
@@ -266,10 +302,10 @@ module.exports = async function handler(req, res) {
         const result = await runTool(pending.tool, { ...pending.input, confirmed: true });
         await kvDel(`pending:${chatId}`);
         const reply = (result && result.message) || 'Bulk job queued.';
-        const bulkJob = bulkJobFromResult(result);
+        bulkJob = bulkJobFromResult(result);
         messages.push({ role: 'assistant', content: reply });
         await kvSet(kvKey, messages, { ex: KV_TTL });
-        res.status(200).json({
+        sendJson(200, {
           ok: true,
           reply,
           actions: [{ tool: pending.tool, input: pending.input, executed: !!(result && result.ok), preview: false }],
@@ -281,10 +317,6 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    const preferredModel = body.model || DEFAULT_MODEL;
-    const actions = [];
-    let usedModel = preferredModel;
-    let bulkJob = null;
     const START = Date.now();
     const deadlineAt = START + FUNCTION_BUDGET_MS;
 
@@ -292,10 +324,10 @@ module.exports = async function handler(req, res) {
     // hard-timeout and serve an unparseable HTML 504 page.
     const returnGracefully = async () => {
       await kvSet(kvKey, messages, { ex: KV_TTL });
-      res.status(200).json({
+      sendJson(200, {
         ok: true,
         reply: bulkJob
-          ? "The bulk job is queued and the dashboard is processing it below."
+          ? 'The bulk job is queued and the dashboard is processing it below.'
           : "I'm still working on this — it's a large request. Say \"continue\" and I'll pick up where I left off.",
         actions,
         chatId,
@@ -308,7 +340,7 @@ module.exports = async function handler(req, res) {
     for (let step = 0; step < MAX_STEPS; step++) {
       // Don't start a model round-trip we can't finish before the budget runs
       // out; return cleanly so the client always gets parseable JSON.
-      if (deadlineAt - Date.now() < MIN_STEP_BUDGET_MS) {
+      if (sent || deadlineAt - Date.now() < MIN_STEP_BUDGET_MS) {
         await returnGracefully();
         return;
       }
@@ -336,7 +368,7 @@ module.exports = async function handler(req, res) {
           .join('\n')
           .trim();
         await kvSet(kvKey, messages, { ex: KV_TTL });
-        res.status(200).json({
+        sendJson(200, {
           ok: true,
           reply: textOut || '(no response)',
           actions,
@@ -355,6 +387,8 @@ module.exports = async function handler(req, res) {
         const result = await runTool(block.name, block.input || {});
         return { block, result };
       });
+      // The safety timer may have already responded while tools ran long.
+      if (sent) return;
       const toolResults = [];
       let bulkReply = null;
       let pendingBulkPreview = null;
@@ -380,7 +414,7 @@ module.exports = async function handler(req, res) {
 
       if (pendingBulkPreview) {
         await kvSet(kvKey, messages, { ex: KV_TTL });
-        res.status(200).json({
+        sendJson(200, {
           ok: true,
           reply: pendingBulkPreview.reply,
           actions,
@@ -395,7 +429,7 @@ module.exports = async function handler(req, res) {
       // without waiting for another Claude round-trip (which often hits 504).
       if (bulkJob && bulkReply) {
         await kvSet(kvKey, messages, { ex: KV_TTL });
-        res.status(200).json({
+        sendJson(200, {
           ok: true,
           reply: bulkReply,
           actions,
@@ -409,8 +443,10 @@ module.exports = async function handler(req, res) {
     }
 
     await kvSet(kvKey, messages, { ex: KV_TTL });
-    res.status(200).json({ ok: true, reply: 'Stopped after too many steps. Please refine your request.', actions, chatId, model: usedModel });
+    sendJson(200, { ok: true, reply: 'Stopped after too many steps. Please refine your request.', actions, chatId, model: usedModel });
   } catch (err) {
-    res.status(500).json({ ok: false, error: String((err && err.message) || err) });
+    sendJson(500, { ok: false, error: String((err && err.message) || err) });
+  } finally {
+    if (budgetTimer) { clearTimeout(budgetTimer); budgetTimer = null; }
   }
 };
