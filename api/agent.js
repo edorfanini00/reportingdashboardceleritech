@@ -59,7 +59,7 @@ const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 // out (the Anthropic API has periods of high latency), we fall over to faster
 // models so the request still completes within the serverless budget. The
 // slowest model (opus) is intentionally LAST so we never burn the budget on it.
-const FALLBACK_PRIORITY = ['claude-haiku-4-5', 'claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'];
+const FALLBACK_PRIORITY = ['claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-haiku-4-5', 'claude-opus-4-8'];
 
 function buildFallbackOrder(preferred) {
   const ids = AVAILABLE_MODELS.map(m => m.id);
@@ -152,8 +152,11 @@ async function callClaude(apiKey, messages, model, timeoutMs = CLAUDE_CALL_TIMEO
         'content-type': 'application/json',
       },
       body: JSON.stringify({
+        // Keep output bounded: CRM actions are short (a tool call + a one-line
+        // confirmation). A high cap let the model run away generating huge
+        // replies (20s+) when given large/ambiguous input like a list of IDs.
         model,
-        max_tokens: 4096,
+        max_tokens: 1024,
         system: SYSTEM_PROMPT,
         tools: anthropicTools(),
         messages,
