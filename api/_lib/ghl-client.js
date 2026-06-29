@@ -15,17 +15,18 @@ function getCredentials() {
 }
 
 // GHL burst limit is ~100 requests / 10s per location. Retry 429s with backoff.
-async function fetchWithRetry(url, options, { maxRetries = 4 } = {}) {
+// Backoff is capped so a rate-limited call can't stall an interactive request
+// (e.g. the chat assistant) long enough to blow the serverless time budget.
+// Worst case ≈ maxRetries * maxWaitMs (default ~7.5s) instead of ~40s+.
+async function fetchWithRetry(url, options, { maxRetries = 3, maxWaitMs = 2500 } = {}) {
   let res;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     res = await fetch(url, options);
     if (res.status !== 429) return res;
     if (attempt === maxRetries) return res;
     const retryAfter = parseInt(res.headers.get('Retry-After') || res.headers.get('retry-after') || '0', 10);
-    const waitMs = retryAfter > 0
-      ? retryAfter * 1000
-      : Math.min(10000, 1000 * Math.pow(2, attempt)) + Math.random() * 500;
-    await new Promise(r => setTimeout(r, waitMs));
+    const base = retryAfter > 0 ? retryAfter * 1000 : 800 * Math.pow(2, attempt) + Math.random() * 300;
+    await new Promise(r => setTimeout(r, Math.min(base, maxWaitMs)));
   }
   return res;
 }

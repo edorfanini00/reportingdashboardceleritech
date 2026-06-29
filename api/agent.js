@@ -268,14 +268,31 @@ module.exports = async function handler(req, res) {
       if (Array.isArray(stored)) messages = stored;
     }
 
-    // Append the new user message.
-    const userText = body.message || (Array.isArray(body.messages) && body.messages.length
-      ? body.messages[body.messages.length - 1].content : null);
-    if (!userText) {
-      sendJson(400, { ok: false, error: 'No message provided.' });
-      return;
+    // A "continue" resume (client auto-retry after a graceful timeout) reloads
+    // the stored conversation and runs the loop again WITHOUT appending a new
+    // user turn — appending one would break Anthropic's role/tool_use pairing if
+    // the previous response bailed mid-step. We just sanitize a trailing,
+    // unmatched assistant tool_use turn so the next model call is valid.
+    const isContinue = body.continue === true;
+    if (isContinue) {
+      if (!messages.length) {
+        sendJson(200, { ok: true, reply: 'Nothing left to continue — go ahead with a new request.', actions: [], chatId, model: usedModel });
+        return;
+      }
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'assistant' && Array.isArray(last.content)
+          && last.content.some(b => b && b.type === 'tool_use')) {
+        messages.pop();
+      }
+    } else {
+      const userText = body.message || (Array.isArray(body.messages) && body.messages.length
+        ? body.messages[body.messages.length - 1].content : null);
+      if (!userText) {
+        sendJson(400, { ok: false, error: 'No message provided.' });
+        return;
+      }
+      messages.push({ role: 'user', content: userText });
     }
-    messages.push({ role: 'user', content: userText });
 
     // Safety net: even if a model call or a tool (e.g. GHL rate-limit backoff)
     // runs long, fire a clean JSON response just before the function would be
@@ -286,17 +303,18 @@ module.exports = async function handler(req, res) {
         ok: true,
         reply: bulkJob
           ? 'The bulk job is queued and the dashboard is processing it below.'
-          : "I'm still working on this — it's taking longer than usual. Say \"continue\" and I'll pick up where I left off.",
+          : "I'm still working on this — it's taking longer than usual. Let me keep going…",
         actions,
         chatId,
         model: usedModel,
         fallback: usedModel !== preferredModel,
         bulkJob,
+        continuable: !bulkJob,
       });
     }, FUNCTION_BUDGET_MS);
 
     // Confirming a bulk action — skip Claude entirely (avoids serverless timeout).
-    if (isConfirmMessage(userText)) {
+    if (!isContinue && isConfirmMessage(body.message)) {
       const pending = await kvGet(`pending:${chatId}`);
       if (pending && BULK_TOOLS.has(pending.tool)) {
         const result = await runTool(pending.tool, { ...pending.input, confirmed: true });
@@ -328,12 +346,13 @@ module.exports = async function handler(req, res) {
         ok: true,
         reply: bulkJob
           ? 'The bulk job is queued and the dashboard is processing it below.'
-          : "I'm still working on this — it's a large request. Say \"continue\" and I'll pick up where I left off.",
+          : "I'm still working on this — it's a large request. Let me keep going…",
         actions,
         chatId,
         model: usedModel,
         fallback: usedModel !== preferredModel,
         bulkJob,
+        continuable: !bulkJob,
       });
     };
 

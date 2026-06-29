@@ -854,23 +854,25 @@ async function runBulkJob(job) {
 function autoGrow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 128) + 'px'; }
 function chatKeydown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(e); } }
 
+const MAX_AUTO_CONTINUE = 3;
+let autoContinueCount = 0;
+
 async function sendChat(e) {
   if (e) e.preventDefault();
   if (chatBusy) return false;
   const inp = document.getElementById('chatInput');
   const text = (inp.value || '').trim();
   if (!text) return false;
-
-  chatBusy = true;
-  document.getElementById('chatSendBtn').disabled = true;
   inp.value = ''; autoGrow(inp);
-  addChatBubble('user', text);
-  chatHistory.push({ role: 'user', content: text });
-  renderSuggestions();
-  addTyping();
 
   // Confirm bulk locally — bypasses /api/agent so it never hits the serverless timeout.
   if (isConfirmMessage(text) && pendingBulkConfirm) {
+    chatBusy = true;
+    document.getElementById('chatSendBtn').disabled = true;
+    addChatBubble('user', text);
+    chatHistory.push({ role: 'user', content: text });
+    renderSuggestions();
+    addTyping();
     const pending = pendingBulkConfirm;
     pendingBulkConfirm = null;
     try {
@@ -891,8 +893,29 @@ async function sendChat(e) {
     return false;
   }
 
+  autoContinueCount = 0; // fresh user turn
+  await postToAgent(text, false);
+  return false;
+}
+
+// Core call to /api/agent. When the server returns a `continuable` response
+// (it ran long and bailed gracefully before Vercel's hard timeout), we silently
+// auto-resume up to MAX_AUTO_CONTINUE times so the assistant can finish queuing
+// the job — instead of dead-ending on a "still working" message.
+async function postToAgent(text, isAuto) {
+  chatBusy = true;
+  document.getElementById('chatSendBtn').disabled = true;
+  if (!isAuto) {
+    addChatBubble('user', text);
+    chatHistory.push({ role: 'user', content: text });
+    renderSuggestions();
+  }
+  addTyping();
+
   try {
-    const payload = { message: text, model: selectedModel };
+    const payload = isAuto
+      ? { continue: true, model: selectedModel }
+      : { message: text, model: selectedModel };
     if (chatId) payload.chatId = chatId;
     const r = await fetch('/api/agent', {
       method: 'POST',
@@ -906,6 +929,11 @@ async function sendChat(e) {
     } catch {
       removeTyping();
       const timedOut = r.status === 504 || /timed out|timeout|FUNCTION_INVOCATION/i.test(raw);
+      if (timedOut && autoContinueCount < MAX_AUTO_CONTINUE) {
+        autoContinueCount++;
+        await postToAgent('continue', true);
+        return;
+      }
       if (timedOut) {
         addChatBubble('assistant', '⚠️ The assistant request timed out before it could respond. If you just confirmed a bulk action, wait a moment and check for a progress bar below — the job may still have started. Otherwise say "continue" or retry the action.');
       } else {
@@ -916,29 +944,36 @@ async function sendChat(e) {
     removeTyping();
     if (!data.ok) {
       addChatBubble('assistant', '⚠️ ' + (data.error || 'Something went wrong.'));
-    } else {
-      if (data.chatId) chatId = data.chatId;
-      if (data.fallback && data.model) {
-        addFallbackNotice(selectedModel, data.model);
-        selectedModel = data.model;
-        renderModelDropdown();
-      }
-      addActionLog(data.actions);
-      addChatBubble('assistant', data.reply);
-      chatHistory.push({ role: 'assistant', content: data.reply });
-      if (data.bulkJob && data.bulkJob.id && (data.bulkJob.total == null || data.bulkJob.total > 0)) {
-        await runBulkJob(data.bulkJob);
-      }
+      return;
     }
+    if (data.chatId) chatId = data.chatId;
+    if (data.fallback && data.model) {
+      addFallbackNotice(selectedModel, data.model);
+      selectedModel = data.model;
+      renderModelDropdown();
+    }
+    addActionLog(data.actions);
+
+    const hasBulk = data.bulkJob && data.bulkJob.id && (data.bulkJob.total == null || data.bulkJob.total > 0);
+
+    // Long-running but not finished: auto-resume without spamming the chat.
+    if (data.continuable && !hasBulk && autoContinueCount < MAX_AUTO_CONTINUE) {
+      autoContinueCount++;
+      await postToAgent('continue', true);
+      return;
+    }
+
+    addChatBubble('assistant', data.reply);
+    chatHistory.push({ role: 'assistant', content: data.reply });
+    if (hasBulk) await runBulkJob(data.bulkJob);
   } catch (err) {
     removeTyping();
     addChatBubble('assistant', '⚠️ Could not reach the assistant (' + err.message + '). Make sure the app is deployed with ANTHROPIC_API_KEY set.');
   } finally {
     chatBusy = false;
     document.getElementById('chatSendBtn').disabled = false;
-    inp.focus();
+    document.getElementById('chatInput').focus();
   }
-  return false;
 }
 function toggleMobileMenu() { const nav = document.getElementById('sidebarNav'); if (nav) { if (nav.classList.contains('hidden')) { nav.classList.remove('hidden'); nav.classList.add('flex'); } else { nav.classList.add('hidden'); nav.classList.remove('flex'); } } }
 function switchCampaign(campaignId) { document.querySelectorAll('.campaign-content').forEach(c => c.classList.remove('active')); document.getElementById('campaign-' + campaignId).classList.add('active'); document.querySelectorAll('.campaign-pill').forEach(p => p.classList.remove('active')); document.getElementById('pill-' + campaignId).classList.add('active'); }
