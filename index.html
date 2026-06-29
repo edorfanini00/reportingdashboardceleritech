@@ -675,6 +675,99 @@ async function runQuickBulk() {
   }
 }
 
+/* ---------- Detect pasted contact IDs in chat and run deterministically (no AI) ---------- */
+let pendingParsedBulk = null;
+function splitTagList(s) { return String(s || '').split(',').map(x => x.trim()).filter(Boolean); }
+
+// If the user pasted a list of contact IDs (GHL ids are ~20-char alphanumeric)
+// we handle it WITHOUT the model — the AI can't reliably echo hundreds of ids
+// back to call a tool, so it times out. We parse the action locally instead.
+function parseBulkFromText(text) {
+  const tokens = (text || '').split(/[\s,]+/).map(s => s.trim());
+  const ids = [...new Set(tokens.filter(t => /^[A-Za-z0-9]{17,25}$/.test(t)))];
+  if (ids.length < 3) return null;
+  const idset = new Set(ids);
+  const instr = tokens.filter(t => !idset.has(t)).join(' ').trim().toLowerCase();
+  let m;
+  if (/\bremove\b/.test(instr) && /\btag/.test(instr)) {
+    m = instr.match(/tags?\s+(?:named\s+|called\s+|the\s+)?["']?(.+?)["']?(?:\s+(?:from|off|on|for)\b.*)?$/);
+    if (m && m[1]) return { op: 'remove_tags', contactIds: ids, tags: splitTagList(m[1]) };
+  }
+  if (/\btag/.test(instr)) {
+    m = instr.match(/tags?\s+(?:named\s+|called\s+|the\s+)?["']?(.+?)["']?\s+(?:to|on|for)\b/);
+    if (!m) m = instr.match(/tags?\s+(?:named\s+|called\s+|the\s+)?["']?(.+?)["']?$/);
+    if (m && m[1]) return { op: 'add_tags', contactIds: ids, tags: splitTagList(m[1]) };
+  }
+  if (/\bsource\b/.test(instr)) {
+    m = instr.match(/source\s*(?:to|=|:|as)?\s*["']?(.+?)["']?$/);
+    if (m && m[1]) return { op: 'update_contact', contactIds: ids, fields: { source: m[1].trim() } };
+  }
+  return { op: null, contactIds: ids };
+}
+
+function describeParsedBulk(p) {
+  const n = p.contactIds.length;
+  if (p.op === 'add_tags') return 'Add tag(s) <strong>' + escapeHtml(p.tags.join(', ')) + '</strong> to <strong>' + n + '</strong> contacts';
+  if (p.op === 'remove_tags') return 'Remove tag(s) <strong>' + escapeHtml(p.tags.join(', ')) + '</strong> from <strong>' + n + '</strong> contacts';
+  if (p.op === 'update_contact') { const k = Object.keys(p.fields)[0]; return 'Set <strong>' + escapeHtml(k) + '</strong> = <strong>' + escapeHtml(p.fields[k]) + '</strong> on <strong>' + n + '</strong> contacts'; }
+  return null;
+}
+
+function showBulkConfirm(p) {
+  // Unknown action: pre-fill the deterministic panel with the IDs and tell the user to pick.
+  if (!p.op) {
+    document.getElementById('bulkTargetType').value = 'ids';
+    onBulkTargetChange();
+    document.getElementById('bulkTargetIds').value = p.contactIds.join('\n');
+    if (document.getElementById('bulkPanel').classList.contains('hidden')) toggleBulkPanel();
+    addChatBubble('assistant', 'I found <strong>' + p.contactIds.length + '</strong> contact IDs but couldn\'t tell what action you want. I\'ve loaded them into the <strong>Quick bulk update</strong> panel above — pick the action (add/remove tag or set field) and press <strong>Run</strong>.');
+    return;
+  }
+  pendingParsedBulk = p;
+  const box = document.getElementById('chatMessages');
+  const wrap = document.createElement('div');
+  wrap.className = 'flex justify-start';
+  wrap.innerHTML = '<div class="bg-white border border-slate-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm max-w-[90%]">'
+    + '<p class="text-sm text-slate-700 mb-2">' + describeParsedBulk(p) + '?</p>'
+    + '<p class="text-[11px] text-slate-400 mb-2">Runs directly against GoHighLevel with a live progress bar — no AI, no timeouts.</p>'
+    + '<div class="flex gap-2">'
+    + '<button onclick="confirmParsedBulk(this)" class="bg-orange-500 hover:bg-orange-600 text-white text-[12px] font-bold rounded-lg px-3 py-1.5 transition-colors">Run &amp; show progress</button>'
+    + '<button onclick="cancelParsedBulk(this)" class="bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-bold rounded-lg px-3 py-1.5 transition-colors">Cancel</button>'
+    + '</div></div>';
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+}
+
+function cancelParsedBulk(btn) {
+  pendingParsedBulk = null;
+  const c = btn.closest('.flex.justify-start'); if (c) c.remove();
+  addChatBubble('assistant', 'Cancelled. Nothing was changed.');
+}
+
+async function confirmParsedBulk(btn) {
+  if (!pendingParsedBulk || chatBusy) return;
+  const p = pendingParsedBulk; pendingParsedBulk = null;
+  const controls = btn.closest('div'); if (controls) controls.remove();
+  chatBusy = true;
+  document.getElementById('chatSendBtn').disabled = true;
+  try {
+    const body = { action: 'create', op: p.op, contactIds: p.contactIds };
+    if (p.tags) body.tags = p.tags;
+    if (p.fields) body.fields = p.fields;
+    const r = await fetch('/api/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const raw = await r.text();
+    let data; try { data = JSON.parse(raw); } catch { data = null; }
+    if (!data || !data.ok) throw new Error((data && data.error) || ('Server error ' + r.status));
+    if (data.bulkJob && data.bulkJob.id) await runBulkJob(data.bulkJob);
+    else addChatBubble('assistant', data.message || 'Job queued.');
+  } catch (err) {
+    addChatBubble('assistant', '⚠️ Could not start bulk job: ' + err.message);
+  } finally {
+    chatBusy = false;
+    document.getElementById('chatSendBtn').disabled = false;
+  }
+}
+
 function isConfirmMessage(text) {
   return /^(yes|y|yeah|yep|confirm|confirmed|go ahead|do it|proceed|ok|okay|sure|approve|approved)\.?!?$/i.test(String(text || '').trim());
 }
@@ -987,6 +1080,18 @@ async function sendChat(e) {
   const text = (inp.value || '').trim();
   if (!text) return false;
   inp.value = ''; autoGrow(inp);
+
+  // Pasted contact IDs → handle deterministically (no AI). The model can't
+  // reliably echo hundreds of ids to call a tool, so it times out; we parse the
+  // action locally and run the chunked bulk job with a live progress bar.
+  const parsed = parseBulkFromText(text);
+  if (parsed) {
+    addChatBubble('user', text);
+    chatHistory.push({ role: 'user', content: text });
+    renderSuggestions();
+    showBulkConfirm(parsed);
+    return false;
+  }
 
   // Confirm bulk locally — bypasses /api/agent so it never hits the serverless timeout.
   if (isConfirmMessage(text) && pendingBulkConfirm) {
