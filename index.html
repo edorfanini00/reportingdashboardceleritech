@@ -677,7 +677,16 @@ async function runQuickBulk() {
 
 /* ---------- Detect pasted contact IDs in chat and run deterministically (no AI) ---------- */
 let pendingParsedBulk = null;
-function splitTagList(s) { return String(s || '').split(',').map(x => x.trim()).filter(Boolean); }
+function splitTagList(s) { return String(cleanBulkVal(s)).split(',').map(x => x.trim()).filter(Boolean); }
+// Strip trailing filler/connector words the action regex may grab
+// (e.g. "Facebook for" / "vip to these contacts" -> "Facebook" / "vip").
+function cleanBulkVal(v) {
+  let out = String(v || '').trim();
+  out = out.replace(/\b(to|for|on|with|of|all|these|those|the)\s+(all\s+)?(of\s+)?(these|the|those)?\s*contacts?\b.*$/i, '').trim();
+  let prev;
+  do { prev = out; out = out.replace(/[\s,;:]+$/, '').replace(/\s+\b(for|to|on|with|of|all|these|those|the|contacts?)\b$/i, '').trim(); } while (out !== prev);
+  return out;
+}
 
 // If the user pasted a list of contact IDs (GHL ids are ~20-char alphanumeric)
 // we handle it WITHOUT the model — the AI can't reliably echo hundreds of ids
@@ -700,7 +709,7 @@ function parseBulkFromText(text) {
   }
   if (/\bsource\b/.test(instr)) {
     m = instr.match(/source\s*(?:to|=|:|as)?\s*["']?(.+?)["']?$/);
-    if (m && m[1]) return { op: 'update_contact', contactIds: ids, fields: { source: m[1].trim() } };
+    if (m && m[1]) { const src = cleanBulkVal(m[1]); if (src) return { op: 'update_contact', contactIds: ids, fields: { source: src } }; }
   }
   return { op: null, contactIds: ids };
 }
