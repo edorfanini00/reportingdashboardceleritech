@@ -1,6 +1,6 @@
 // Endpoint that creates and processes bulk-action jobs in small fast requests.
 const { ghlConfigured } = require('./_lib/ghl-client');
-const { createBulkJob, processBulkJob, bulkQueuedMessage } = require('./_lib/bulk');
+const { createBulkJob, processBulkJob, resolveAll, bulkQueuedMessage } = require('./_lib/bulk');
 
 async function readBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -41,13 +41,19 @@ module.exports = async function handler(req, res) {
         tag: body.tag,
         allTags: body.allTags,
       });
+      // Resolve the full target count up front (bounded) so the progress bar
+      // shows a real "0 / N" total immediately instead of "0 / …".
+      let resolved = job;
+      if (!job.resolved) {
+        resolved = (await resolveAll(job.id, 8000)) || job;
+      }
       res.status(200).json({
         ok: true,
-        jobId: job.id,
-        op: job.op,
-        total: job.total,
-        message: bulkQueuedMessage(job),
-        bulkJob: { id: job.id, total: job.total, op: job.op },
+        jobId: resolved.id,
+        op: resolved.op,
+        total: resolved.total,
+        message: bulkQueuedMessage(resolved),
+        bulkJob: { id: resolved.id, total: resolved.total, op: resolved.op },
       });
       return;
     }

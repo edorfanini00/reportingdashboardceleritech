@@ -119,6 +119,21 @@ async function createBulkJob(spec) {
   return job;
 }
 
+// Eagerly resolve a tag-based job's full target list (bounded by time) so the
+// progress bar can show a real total ("0 / 350") right away instead of "0 / …".
+// If the tag is huge and we run out of time, the job stays deferred and the
+// remaining pages resolve during processing — no correctness impact.
+async function resolveAll(jobId, maxMs = 8000) {
+  const startT = Date.now();
+  let job = await kvGet(`bulk:${jobId}`);
+  if (!job) return null;
+  while (!job.resolved && Date.now() - startT < maxMs) {
+    await resolveNextPages(job);
+    await kvSet(`bulk:${jobId}`, job, { ex: TTL });
+  }
+  return job;
+}
+
 // Advance tag-based resolution by up to RESOLVE_PAGES_PER_CALL pages.
 async function resolveNextPages(job) {
   if (job.resolved || !job.tag) return;
@@ -183,6 +198,7 @@ function bulkQueuedMessage(job) {
 module.exports = {
   createBulkJob,
   processBulkJob,
+  resolveAll,
   resolveTargets,
   kvAvailable,
   bulkQueuedMessage,
