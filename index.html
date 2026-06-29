@@ -307,6 +307,47 @@ ACTIVE PIPELINE
 </button>
 </div>
 </div>
+<!-- Deterministic bulk tool — runs directly via /api/bulk, no AI involved, always shows a progress bar -->
+<div class="border-b border-slate-100/70 shrink-0">
+<button type="button" onclick="toggleBulkPanel()" class="w-full flex items-center justify-between px-5 py-2.5 text-[12px] font-bold text-slate-600 hover:bg-slate-50/60 transition-colors">
+<span class="flex items-center gap-2"><svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>Quick bulk update (no AI — guaranteed progress bar)</span>
+<svg id="bulkPanelChevron" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+</button>
+<div id="bulkPanel" class="hidden px-5 pb-4 space-y-2.5">
+<div class="grid grid-cols-2 gap-2">
+<div>
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Target</label>
+<select id="bulkTargetType" onchange="onBulkTargetChange()" class="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-2 text-[12px] text-slate-700 outline-none focus:border-orange-400">
+<option value="tag">Contacts with tag</option>
+<option value="ids">Specific contact IDs</option>
+</select>
+</div>
+<div>
+<label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Action</label>
+<select id="bulkAction" onchange="onBulkActionChange()" class="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-2 text-[12px] text-slate-700 outline-none focus:border-orange-400">
+<option value="add_tags">Add tag(s)</option>
+<option value="remove_tags">Remove tag(s)</option>
+<option value="update_contact">Set field (e.g. source)</option>
+</select>
+</div>
+</div>
+<div id="bulkTargetTagWrap">
+<input id="bulkTargetTag" placeholder="Tag to match (e.g. sentbyjhon)" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-orange-400" />
+</div>
+<div id="bulkTargetIdsWrap" class="hidden">
+<textarea id="bulkTargetIds" rows="3" placeholder="Paste contact IDs, one per line" class="w-full resize-none bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-orange-400 scroll-container"></textarea>
+</div>
+<div id="bulkTagsWrap">
+<input id="bulkTags" placeholder="Tag(s) to add/remove — comma-separated" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-orange-400" />
+</div>
+<div id="bulkFieldWrap" class="hidden grid grid-cols-2 gap-2">
+<input id="bulkFieldName" placeholder="Field (e.g. source)" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-orange-400" />
+<input id="bulkFieldValue" placeholder="Value (e.g. Facebook)" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-orange-400" />
+</div>
+<button type="button" onclick="runQuickBulk()" id="bulkRunBtn" class="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-[12px] font-bold rounded-lg py-2.5 transition-colors">Run &amp; show progress</button>
+<p class="text-[10px] text-slate-400">This runs immediately against GoHighLevel and shows a live progress bar below. It does not use the AI model.</p>
+</div>
+</div>
 <div id="chatMessages" class="flex-1 overflow-y-auto scroll-container px-4 md:px-6 py-5 space-y-4"></div>
 <div id="chatSuggestions" class="px-4 md:px-6 pb-2 flex flex-wrap gap-2 shrink-0"></div>
 <div class="border-t border-slate-100/70 p-3 md:p-4 shrink-0">
@@ -555,6 +596,84 @@ function switchTab(tabId) {
 /* ---------------- AI Assistant chat ---------------- */
 let chatHistory = [];
 let pendingBulkConfirm = null;
+
+/* ---------- Deterministic bulk tool (no AI) ---------- */
+function toggleBulkPanel() {
+  const p = document.getElementById('bulkPanel');
+  const chev = document.getElementById('bulkPanelChevron');
+  const open = p.classList.toggle('hidden');
+  if (chev) chev.style.transform = open ? '' : 'rotate(180deg)';
+}
+function onBulkTargetChange() {
+  const t = document.getElementById('bulkTargetType').value;
+  document.getElementById('bulkTargetTagWrap').classList.toggle('hidden', t !== 'tag');
+  document.getElementById('bulkTargetIdsWrap').classList.toggle('hidden', t !== 'ids');
+}
+function onBulkActionChange() {
+  const a = document.getElementById('bulkAction').value;
+  const isField = a === 'update_contact';
+  document.getElementById('bulkTagsWrap').classList.toggle('hidden', isField);
+  document.getElementById('bulkFieldWrap').classList.toggle('hidden', !isField);
+}
+async function runQuickBulk() {
+  if (chatBusy) return;
+  const btn = document.getElementById('bulkRunBtn');
+  const targetType = document.getElementById('bulkTargetType').value;
+  const op = document.getElementById('bulkAction').value;
+  const body = { action: 'create', op };
+  let desc = '';
+
+  if (targetType === 'tag') {
+    const tag = (document.getElementById('bulkTargetTag').value || '').trim();
+    if (!tag) { alert('Enter the tag to match.'); return; }
+    body.tag = tag;
+    desc = 'contacts tagged "' + tag + '"';
+  } else {
+    const ids = (document.getElementById('bulkTargetIds').value || '')
+      .split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+    if (!ids.length) { alert('Paste at least one contact ID.'); return; }
+    body.contactIds = ids;
+    desc = ids.length + ' contact(s)';
+  }
+
+  if (op === 'update_contact') {
+    const field = (document.getElementById('bulkFieldName').value || '').trim();
+    const value = (document.getElementById('bulkFieldValue').value || '').trim();
+    if (!field) { alert('Enter the field name (e.g. source).'); return; }
+    body.fields = { [field]: value };
+    desc = 'Set ' + field + ' = "' + value + '" on ' + desc;
+  } else {
+    const tags = (document.getElementById('bulkTags').value || '')
+      .split(',').map(s => s.trim()).filter(Boolean);
+    if (!tags.length) { alert('Enter the tag(s) to ' + (op === 'remove_tags' ? 'remove' : 'add') + '.'); return; }
+    body.tags = tags;
+    desc = (op === 'remove_tags' ? 'Remove' : 'Add') + ' tag(s) "' + tags.join(', ') + '" on ' + desc;
+  }
+
+  chatBusy = true;
+  btn.disabled = true;
+  addChatBubble('assistant', '▶️ Starting: ' + desc + '…');
+  try {
+    const r = await fetch('/api/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const raw = await r.text();
+    let data; try { data = JSON.parse(raw); } catch { data = null; }
+    if (!data || !data.ok) throw new Error((data && data.error) || ('Server error ' + r.status));
+    if (data.bulkJob && data.bulkJob.id) {
+      await runBulkJob(data.bulkJob);
+    } else {
+      addChatBubble('assistant', data.message || 'Job queued.');
+    }
+  } catch (err) {
+    addChatBubble('assistant', '⚠️ Could not start bulk job: ' + err.message);
+  } finally {
+    chatBusy = false;
+    btn.disabled = false;
+  }
+}
 
 function isConfirmMessage(text) {
   return /^(yes|y|yeah|yep|confirm|confirmed|go ahead|do it|proceed|ok|okay|sure|approve|approved)\.?!?$/i.test(String(text || '').trim());

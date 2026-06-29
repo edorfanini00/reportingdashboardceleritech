@@ -55,10 +55,16 @@ const AVAILABLE_MODELS = [
 ];
 const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 
+// Fallback priority is fastest-first. When the preferred model is slow/times
+// out (the Anthropic API has periods of high latency), we fall over to faster
+// models so the request still completes within the serverless budget. The
+// slowest model (opus) is intentionally LAST so we never burn the budget on it.
+const FALLBACK_PRIORITY = ['claude-haiku-4-5', 'claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'];
+
 function buildFallbackOrder(preferred) {
   const ids = AVAILABLE_MODELS.map(m => m.id);
   if (!preferred || !ids.includes(preferred)) preferred = DEFAULT_MODEL;
-  return [preferred, ...ids.filter(id => id !== preferred)];
+  return [preferred, ...FALLBACK_PRIORITY.filter(id => id !== preferred && ids.includes(id))];
 }
 
 function isRetryableError(status, body) {
@@ -123,15 +129,15 @@ function toAnthropicMessages(history) {
     .map(m => ({ role: m.role, content: m.content }));
 }
 
-const CLAUDE_CALL_TIMEOUT_MS = 24000;
+const CLAUDE_CALL_TIMEOUT_MS = 30000;
 // Total wall-clock budget for the whole request. Must stay safely under
 // Vercel's 60s hard maxDuration so we always return parseable JSON instead of
 // an HTML 504 page (which the client can only show as a generic timeout).
-const FUNCTION_BUDGET_MS = 50000;
+const FUNCTION_BUDGET_MS = 55000;
 // Buffer reserved after a model call for tool execution + writing the response.
-const RESPONSE_BUFFER_MS = 4000;
+const RESPONSE_BUFFER_MS = 3000;
 // Don't even start another model round-trip unless this much budget remains.
-const MIN_STEP_BUDGET_MS = 9000;
+const MIN_STEP_BUDGET_MS = 10000;
 
 async function callClaude(apiKey, messages, model, timeoutMs = CLAUDE_CALL_TIMEOUT_MS) {
   const ctrl = new AbortController();
