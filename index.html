@@ -268,6 +268,21 @@ ACTIVE PIPELINE
 <div class="h-[220px] md:h-[250px]"><canvas id="bookChart"></canvas></div>
 </div>
 </div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<div class="glass-card p-4 md:p-6">
+<div class="flex justify-between items-start mb-1">
+<h4 class="text-sm md:text-base font-bold text-slate-800">Call Outcomes</h4>
+<span class="text-[9px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-lg uppercase tracking-wider" id="bookedRateBadge">0% booked</span>
+</div>
+<p class="text-[10px] text-slate-400 font-medium mb-4">Follow-up status from GoHighLevel call &amp; meeting tags</p>
+<div id="callOutcomes" class="space-y-2.5"></div>
+</div>
+<div class="glass-card p-4 md:p-6">
+<h4 class="text-sm md:text-base font-bold text-slate-800 mb-1">Reply Sentiment</h4>
+<p class="text-[10px] text-slate-400 font-medium mb-4">Positive vs negative replies from outreach</p>
+<div id="replySentiment" class="space-y-2.5"></div>
+</div>
+</div>
 <div class="glass-card p-4 md:p-6">
 <h4 class="text-sm md:text-base font-bold text-slate-800 mb-1">Arrival Heatmap</h4>
 <p class="text-[10px] text-slate-400 font-medium mb-4">Day of week &times; time of day &mdash; darker means more leads</p>
@@ -1703,6 +1718,56 @@ function renderAnalytics(data) {
             }
         }
     });
+
+    // --- Call outcomes + reply sentiment (from GHL tags) ---
+    const tagsOf = (l) => (l.tags || []).map(t => String(t).toLowerCase());
+    let cBooked = 0, cNotInterested = 0, cCallback = 0, cAnswered = 0, cNoAnswer = 0, cNoOutcome = 0;
+    let rPos = 0, rNeg = 0;
+    leads.forEach(l => {
+        const ts = tagsOf(l);
+        const has = (s) => ts.some(t => t.includes(s));
+        if (has('positive reply')) rPos++;
+        else if (has('negative reply')) rNeg++;
+        // One status per lead, most advanced outcome wins.
+        if (l.meetingBooked || has('meeting booked')) { cBooked++; return; }
+        if (has('not interested') || has('unsubscribed') || ts.includes('remove')) { cNotInterested++; return; }
+        if (ts.includes('hold') || has('call back') || has('callback') || has('follow-up')) { cCallback++; return; }
+        if (ts.includes('call answer') || ts.includes('answer') || has('call answered')) { cAnswered++; return; }
+        if (has('call no answer') || has('no voicemail') || has('left voicemail')) { cNoAnswer++; return; }
+        cNoOutcome++;
+    });
+    const outcomeRow = (label, count, color) => {
+        const pct = total ? (count / total * 100) : 0;
+        return '<div>'
+            + '<div class="flex justify-between items-center mb-1">'
+            + '<span class="text-[10px] md:text-[11px] font-bold text-slate-600">' + label + '</span>'
+            + '<span class="text-[10px] md:text-[11px] font-black text-slate-700">' + count + ' <span class="text-slate-400 font-bold">(' + pct.toFixed(1) + '%)</span></span>'
+            + '</div>'
+            + '<div class="h-2.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full rounded-full transition-all duration-700" style="width:' + pct + '%;background:' + color + ';"></div></div>'
+            + '</div>';
+    };
+    const outcomesEl = document.getElementById('callOutcomes');
+    if (outcomesEl) {
+        outcomesEl.innerHTML =
+            outcomeRow('Meeting Booked', cBooked, '#10b981')
+            + outcomeRow('Call Back / On Hold', cCallback, '#f59e0b')
+            + outcomeRow('Answered', cAnswered, '#0ea5e9')
+            + outcomeRow('No Answer', cNoAnswer, '#94a3b8')
+            + outcomeRow('Not Interested', cNotInterested, '#ef4444')
+            + outcomeRow('No Outcome Yet', cNoOutcome, '#cbd5e1');
+    }
+    const badge = document.getElementById('bookedRateBadge');
+    if (badge) badge.textContent = (total ? (cBooked / total * 100).toFixed(1) : '0') + '% booked';
+    const replyEl = document.getElementById('replySentiment');
+    if (replyEl) {
+        const rNone = total - rPos - rNeg;
+        const replied = rPos + rNeg;
+        replyEl.innerHTML =
+            outcomeRow('Positive Reply', rPos, '#10b981')
+            + outcomeRow('Negative Reply', rNeg, '#ef4444')
+            + outcomeRow('No Reply Yet', rNone, '#cbd5e1')
+            + '<p class="text-[10px] text-slate-400 font-semibold pt-1">' + (replied ? ('Reply rate: ' + (replied / total * 100).toFixed(1) + '% · ' + Math.round(rPos / replied * 100) + '% of replies are positive') : 'No replies tracked in this range yet') + '</p>';
+    }
 
     // --- Heatmap (day x 3h block, timed leads only) ---
     const grid = document.getElementById('heatmapGrid');
