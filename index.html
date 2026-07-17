@@ -264,8 +264,9 @@ ACTIVE PIPELINE
 </div>
 <div class="glass-card p-4 md:p-6">
 <h4 class="text-sm md:text-base font-bold text-slate-800 mb-1">Meetings Booked by Campaign</h4>
-<p class="text-[10px] text-slate-400 font-medium mb-3">Conversion from lead to booked meeting</p>
+<p class="text-[10px] text-slate-400 font-medium mb-3">Conversion from lead to booked meeting &mdash; click a campaign or name for details</p>
 <div class="h-[220px] md:h-[250px]"><canvas id="bookChart"></canvas></div>
+<div id="bookedNames" class="mt-3 space-y-2.5"></div>
 </div>
 </div>
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -535,13 +536,17 @@ function showFunnelLeads(type) {
     const title = type === 'booked' ? 'Meetings Booked' : 'Meetings Attended';
     const accentColor = type === 'booked' ? 'orange' : 'emerald';
     document.getElementById('funnelModalTitle').innerText = title;
-    document.getElementById('funnelModalSubtitle').innerText = allLeads.length + ' lead' + (allLeads.length !== 1 ? 's' : '') + ' — All Time';
-    document.getElementById('funnelModalSubtitle').className = 'text-[10px] md:text-[11px] font-bold text-'+accentColor+'-500 uppercase tracking-widest mt-1';
+    const subEl = document.getElementById('funnelModalSubtitle');
+    subEl.innerText = allLeads.length + ' lead' + (allLeads.length !== 1 ? 's' : '') + ' — All Time';
+    subEl.className = 'text-[10px] md:text-[11px] font-bold text-'+accentColor+'-500 uppercase tracking-widest mt-1';
+    subEl.style.color = '';
     const container = document.getElementById('funnelModalContent');
     container.innerHTML = '';
     allLeads.forEach(lead => {
         const attendedBadge = lead.meetingAttended ? '<span class="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded uppercase">Attended</span>' : '<span class="text-[8px] font-black text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded uppercase">Booked</span>';
-        container.innerHTML += '<div class="bg-white/60 border border-slate-100 p-4 rounded-[20px] shadow-sm"><div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-2"><div><h4 class="text-base md:text-lg font-bold text-slate-800">'+lead.name+'</h4><p class="text-[9px] font-black text-orange-500 uppercase mt-0.5">'+lead.business+'</p></div>'+attendedBadge+'</div><div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] md:text-[11px] font-semibold text-slate-600"><div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Email</p><p class="truncate">'+lead.email+'</p></div><div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Phone</p><p>'+lead.phone+'</p></div></div></div>';
+        const camp = canonicalPipe(lead.pipeline);
+        const campBadge = '<span class="text-[8px] font-black px-2 py-0.5 rounded uppercase border" style="color:' + pipeColor(camp) + ';background:' + pipeColor(camp) + '15;border-color:' + pipeColor(camp) + '44;">' + escapeHtml(camp) + '</span>';
+        container.innerHTML += '<div class="bg-white/60 border border-slate-100 p-4 rounded-[20px] shadow-sm"><div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-2"><div><h4 class="text-base md:text-lg font-bold text-slate-800">'+lead.name+'</h4><p class="text-[9px] font-black text-orange-500 uppercase mt-0.5">'+lead.business+'</p></div><div class="flex items-center gap-1.5">'+campBadge+attendedBadge+'</div></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] md:text-[11px] font-semibold text-slate-600"><div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Email</p><p class="truncate">'+lead.email+'</p></div><div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Phone</p><p>'+lead.phone+'</p></div></div></div>';
     });
     toggleFunnelModal(true);
 }
@@ -1545,6 +1550,40 @@ function renderSummaryChart(data) {
 /* ---------------- Lead Analytics (Summary tab) ---------------- */
 let dowChart = null, todChart = null, mixChart = null, bookChart = null;
 
+// [campaignName, leads[]] pairs for the current analytics range, so the
+// booked-names list and chart clicks can open the actual leads.
+let analyticsBookedGroups = [];
+function showBookedCampaign(gi) {
+    const group = analyticsBookedGroups[gi];
+    if (!group) return;
+    const [campaign, ls] = group;
+    const color = pipeColor(campaign);
+    document.getElementById('funnelModalTitle').innerText = campaign + ' — Meetings Booked';
+    const sub = document.getElementById('funnelModalSubtitle');
+    sub.innerText = ls.length + ' booked lead' + (ls.length !== 1 ? 's' : '') + ' in the selected range';
+    sub.className = 'text-[10px] md:text-[11px] font-bold uppercase tracking-widest mt-1';
+    sub.style.color = color;
+    const container = document.getElementById('funnelModalContent');
+    container.innerHTML = ls.map(lead => {
+        const statusBadge = lead.callStatus
+            ? '<span class="text-[8px] font-black text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded uppercase">' + escapeHtml(lead.callStatus) + '</span>'
+            : '';
+        return '<div class="bg-white/60 border border-slate-100 p-4 rounded-[20px] shadow-sm">'
+            + '<div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-2">'
+            + '<div><h4 class="text-base md:text-lg font-bold text-slate-800">' + escapeHtml(lead.name) + '</h4>'
+            + '<p class="text-[9px] font-black uppercase mt-0.5" style="color:' + color + ';">' + escapeHtml(lead.business || '') + '</p></div>'
+            + '<div class="flex items-center gap-1.5"><span class="text-[8px] font-black text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded uppercase">Booked</span>' + statusBadge + '</div>'
+            + '</div>'
+            + '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] md:text-[11px] font-semibold text-slate-600">'
+            + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Email</p><p class="truncate">' + escapeHtml(lead.email || '--') + '</p></div>'
+            + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Phone</p><p>' + escapeHtml(lead.phone || '--') + '</p></div>'
+            + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Date</p><p>' + escapeHtml(lead.date || '--') + '</p></div>'
+            + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Source</p><p class="truncate">' + escapeHtml(lead.source || '--') + '</p></div>'
+            + '</div></div>';
+    }).join('');
+    toggleFunnelModal(true);
+}
+
 const PIPE_COLORS = [
     ['MIAMI', '#ec4899'],
     ['METODO ALIMENTACION', '#14b8a6'],
@@ -1689,6 +1728,31 @@ function renderAnalytics(data) {
     });
 
     // --- Meetings booked by campaign ---
+    // Group the actual booked leads per campaign so the names can be listed
+    // and opened from the chart.
+    const bookedBy = {};
+    leads.forEach(l => {
+        if (!l.meetingBooked) return;
+        const p = canonicalPipe(l.pipeline);
+        (bookedBy[p] = bookedBy[p] || []).push(l);
+    });
+    analyticsBookedGroups = Object.entries(bookedBy).sort((a, b) => b[1].length - a[1].length);
+    const namesEl = document.getElementById('bookedNames');
+    if (namesEl) {
+        namesEl.innerHTML = analyticsBookedGroups.length
+            ? analyticsBookedGroups.map(([p, ls], gi) =>
+                '<div>'
+                + '<button type="button" onclick="showBookedCampaign(' + gi + ')" class="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-slate-600 hover:text-slate-900 transition-colors">'
+                + '<span class="w-2 h-2 rounded-full" style="background:' + pipeColor(p) + ';"></span>'
+                + escapeHtml(p) + ' &middot; ' + ls.length + ' booked'
+                + '</button>'
+                + '<div class="flex flex-wrap gap-1.5 mt-1.5">'
+                + ls.map(l => '<button type="button" onclick="showBookedCampaign(' + gi + ')" title="' + escapeHtml(l.business || '') + '" class="text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-colors hover:brightness-95" style="background:' + pipeColor(p) + '18;border-color:' + pipeColor(p) + '55;color:' + pipeColor(p) + ';">' + escapeHtml(l.name) + '</button>').join('')
+                + '</div>'
+                + '</div>').join('')
+            : '<p class="text-[10px] text-slate-400 italic">No booked meetings in this range yet.</p>';
+    }
+
     if (bookChart) bookChart.destroy();
     const bookEl = document.getElementById('bookChart');
     if (bookEl) bookChart = new Chart(bookEl.getContext('2d'), {
@@ -1702,6 +1766,12 @@ function renderAnalytics(data) {
         },
         options: {
             indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            onClick: (evt, els) => {
+                if (!els.length) return;
+                const campaign = mixEntries[els[0].index][0];
+                const gi = analyticsBookedGroups.findIndex(g => g[0] === campaign);
+                if (gi !== -1) showBookedCampaign(gi);
+            },
             plugins: {
                 legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 10, font: { size: 10, weight: 'bold' }, color: '#64748b' } },
                 tooltip: { callbacks: { label: (c) => {
