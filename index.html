@@ -1980,11 +1980,15 @@ function mergeGhlLeads(ghlLeads) {
             return;
         }
         const email = lead.email && lead.email !== 'Not Provided' ? lead.email.toLowerCase() : null;
-        const byEmail = email && findAnywhere(l => l.email && l.email !== 'Not Provided' && l.email.toLowerCase() === email);
-        if (byEmail) {
+        // Fall back to an exact full-name match: some GHL contacts carry email
+        // typos (e.g. gmsil.com) that would otherwise duplicate a curated entry.
+        const name = String(lead.name || '').trim().toLowerCase();
+        const byPerson = (email && findAnywhere(l => l.email && l.email !== 'Not Provided' && l.email.toLowerCase() === email))
+            || (name && name !== 'unknown lead' && findAnywhere(l => !l.id && String(l.name || '').trim().toLowerCase() === name));
+        if (byPerson) {
             // Curated historical entry: keep it in place but layer on the live
             // GHL status so bookings and call outcomes stay current.
-            const existing = leadsByWeek[byEmail.wk][byEmail.idx];
+            const existing = leadsByWeek[byPerson.wk][byPerson.idx];
             if (lead.callStatus) existing.callStatus = lead.callStatus;
             if (lead.tags && lead.tags.length) existing.tags = lead.tags;
             if (lead.meetingBooked) existing.meetingBooked = true;
