@@ -1565,7 +1565,7 @@ function showBookedCampaign(gi) {
     sub.style.color = color;
     const container = document.getElementById('funnelModalContent');
     container.innerHTML = ls.map(lead => {
-        const statusBadge = lead.callStatus
+        const statusBadge = lead.callStatus && lead.callStatus.toLowerCase() !== 'booked'
             ? '<span class="text-[8px] font-black text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded uppercase">' + escapeHtml(lead.callStatus) + '</span>'
             : '';
         return '<div class="bg-white/60 border border-slate-100 p-4 rounded-[20px] shadow-sm">'
