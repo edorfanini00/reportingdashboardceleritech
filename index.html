@@ -1546,6 +1546,25 @@ function pipeColor(pipeline) {
     return '#64748b';
 }
 
+// Collapse historical pipeline name variants ("food manufacturer es",
+// "Food Manufacturers", "Tortilla"...) into canonical campaign buckets so the
+// analytics charts don't fragment into near-duplicate categories.
+function canonicalPipe(pipeline) {
+    const p = (pipeline || '').toUpperCase();
+    if (p.includes('MIAMI')) return 'Miami Neighborhood';
+    if (p.startsWith('METODO')) {
+        if (p.includes('ALIMENTACION')) return 'Metodo Alimentacion';
+        if (p.includes('OIL')) return 'Metodo Oil & Gas';
+        if (p.includes('CONTENEDORES')) return 'Metodo Contenedores';
+        return 'Metodo';
+    }
+    if (p.includes('OIL')) return 'Oil & Gas';
+    if (p.includes('FDA')) return 'FDA';
+    if (p.includes('FOOD') || p.includes('TORTILLA')) return 'Food Manufacturer';
+    if (p.includes('META')) return 'Meta Lead';
+    return 'Other';
+}
+
 // Historical (hardcoded) leads only carry a "May 26"-style date; GHL leads
 // carry a full ISO timestamp. Day-of-week works for both, time-of-day only
 // for GHL leads.
@@ -1585,7 +1604,7 @@ function renderAnalytics(data) {
     // --- Campaign mix + bookings per campaign ---
     const mix = {}; const booked = {};
     leads.forEach(l => {
-        const p = l.pipeline || 'General';
+        const p = canonicalPipe(l.pipeline);
         mix[p] = (mix[p] || 0) + 1;
         if (l.meetingBooked) booked[p] = (booked[p] || 0) + 1;
     });
