@@ -52,9 +52,11 @@ module.exports = async function handler(req, res) {
   try {
     const payload = await readBody(req);
     const tags = normalizeTags(payload.tags || (payload.contact && payload.contact.tags) || payload.tag);
+    const source = payload.source || payload.contact_source
+      || (payload.contact && payload.contact.source) || '';
 
-    if (!hasQualifyingTag(tags)) {
-      res.status(200).json({ ok: true, skipped: true, reason: 'Contact must have a meta / fda / oil / metodo tag (e.g. "meta lead", "meta lead fda", "fda", "metodo campaign")', tags });
+    if (!hasQualifyingTag(tags, source)) {
+      res.status(200).json({ ok: true, skipped: true, reason: 'Contact must have a meta / fda / oil / miami tag, or a metodo tag with a Facebook source', tags, source });
       return;
     }
 

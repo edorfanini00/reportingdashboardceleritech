@@ -1247,13 +1247,15 @@ function populateLeadsModal() {
     const isFood = (l) => pipeOf(l) === 'FOOD MANUFACTURER';
     const isOil = (l) => pipeOf(l) === 'OIL & GAS';
     const isMiami = (l) => pipeOf(l).includes('MIAMI');
-    const isMetodoAlim = (l) => pipeOf(l).startsWith('METODO') && pipeOf(l).includes('ALIMENTACION');
-    const isMetodoOil = (l) => pipeOf(l).startsWith('METODO') && pipeOf(l).includes('OIL');
-    const isMetodoOther = (l) => pipeOf(l).startsWith('METODO') && !isMetodoAlim(l) && !isMetodoOil(l);
-    const isGeneral = (l) => !isFda(l) && !isFood(l) && !isOil(l) && !isMiami(l) && !pipeOf(l).startsWith('METODO');
+    const isMetodoAny = (l) => pipeOf(l).startsWith('METODO');
+    const isMetodoAlim = (l) => isMetodoAny(l) && pipeOf(l).includes('ALIMENTACION');
+    const isMetodoOil = (l) => isMetodoAny(l) && pipeOf(l).includes('OIL');
+    const isMetodoOther = (l) => isMetodoAny(l) && !isMetodoAlim(l) && !isMetodoOil(l);
+    const isGeneral = (l) => !isFda(l) && !isFood(l) && !isOil(l) && !isMiami(l) && !isMetodoAny(l);
     const fdaCount = allLeads.filter(isFda).length;
     const foodCount = allLeads.filter(isFood).length;
     const oilCount = allLeads.filter(isOil).length;
+    const metodoAnyCount = allLeads.filter(isMetodoAny).length;
     const metodoCount = allLeads.filter(isMetodoOther).length;
     const metodoAlimCount = allLeads.filter(isMetodoAlim).length;
     const metodoOilCount = allLeads.filter(isMetodoOil).length;
@@ -1268,6 +1270,7 @@ function populateLeadsModal() {
     if(fdaCount > 0) filterHTML += '<button onclick="setLeadFilter(\'fda\')" class="'+pillBase+(currentLeadFilter==='fda'?'bg-red-500 text-white border-red-500 shadow-md ':pillInactive)+'">FDA <span class="ml-1 opacity-70">'+fdaCount+'</span></button>';
     if(foodCount > 0) filterHTML += '<button onclick="setLeadFilter(\'food\')" class="'+pillBase+(currentLeadFilter==='food'?'bg-orange-500 text-white border-orange-500 shadow-md ':pillInactive)+'">Food Man <span class="ml-1 opacity-70">'+foodCount+'</span></button>';
     if(oilCount > 0) filterHTML += '<button onclick="setLeadFilter(\'oil\')" class="'+pillBase+(currentLeadFilter==='oil'?'bg-purple-600 text-white border-purple-600 shadow-md ':pillInactive)+'">Oil &amp; Gas <span class="ml-1 opacity-70">'+oilCount+'</span></button>';
+    if(metodoAnyCount > 0) filterHTML += '<button onclick="setLeadFilter(\'metodo-all\')" class="'+pillBase+(currentLeadFilter==='metodo-all'?'bg-sky-600 text-white border-sky-600 shadow-md ':pillInactive)+'">All Metodo <span class="ml-1 opacity-70">'+metodoAnyCount+'</span></button>';
     if(metodoCount > 0) filterHTML += '<button onclick="setLeadFilter(\'metodo\')" class="'+pillBase+(currentLeadFilter==='metodo'?'bg-sky-500 text-white border-sky-500 shadow-md ':pillInactive)+'">Metodo <span class="ml-1 opacity-70">'+metodoCount+'</span></button>';
     if(metodoAlimCount > 0) filterHTML += '<button onclick="setLeadFilter(\'metodo-alim\')" class="'+pillBase+(currentLeadFilter==='metodo-alim'?'bg-teal-500 text-white border-teal-500 shadow-md ':pillInactive)+'">Metodo Alimentacion <span class="ml-1 opacity-70">'+metodoAlimCount+'</span></button>';
     if(metodoOilCount > 0) filterHTML += '<button onclick="setLeadFilter(\'metodo-oil\')" class="'+pillBase+(currentLeadFilter==='metodo-oil'?'bg-indigo-500 text-white border-indigo-500 shadow-md ':pillInactive)+'">Metodo Oil &amp; Gas <span class="ml-1 opacity-70">'+metodoOilCount+'</span></button>';
@@ -1279,6 +1282,7 @@ function populateLeadsModal() {
     if(currentLeadFilter === 'fda') leads = allLeads.filter(isFda);
     else if(currentLeadFilter === 'food') leads = allLeads.filter(isFood);
     else if(currentLeadFilter === 'oil') leads = allLeads.filter(isOil);
+    else if(currentLeadFilter === 'metodo-all') leads = allLeads.filter(isMetodoAny);
     else if(currentLeadFilter === 'metodo') leads = allLeads.filter(isMetodoOther);
     else if(currentLeadFilter === 'metodo-alim') leads = allLeads.filter(isMetodoAlim);
     else if(currentLeadFilter === 'metodo-oil') leads = allLeads.filter(isMetodoOil);

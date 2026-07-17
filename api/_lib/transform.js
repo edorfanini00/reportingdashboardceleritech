@@ -76,18 +76,46 @@ function normalizeTags(raw) {
 // "meta oil and gas lead". Metodo campaign leads carry "metodo campaign" /
 // "metodo alimentacion" / "metodo oil&gas campaign" / "metodo contenedores".
 // Miami neighborhood (USA) campaign leads carry "en miami neighborhoods" /
-// "es miami neighborhood". Any tag containing "meta", "fda", "oil", "metodo"
-// or "miami neighborhood" qualifies.
-function hasQualifyingTag(tags) {
+// "es miami neighborhood".
+//
+// The metodo tags also cover email + Instagram DM outreach; the report only
+// tracks the Facebook ad leads, so metodo-tagged contacts qualify ONLY when
+// their GHL source is a Facebook campaign (e.g. "Facebook - Metodo
+// Alimentacion", "Facebook - Metodo Petroleo").
+function hasQualifyingTag(tags, source) {
   const normalized = normalizeTags(tags);
-  return normalized.some(t => t.includes('meta') || t.includes('fda') || t.includes('oil') || t.includes('metodo') || t.includes('miami neighborhood'));
+  const has = (s) => normalized.some(t => t.includes(s));
+  if (has('metodo') && !has('miami neighborhood')) {
+    return String(source || '').toLowerCase().includes('facebook');
+  }
+  return normalized.some(t => t.includes('meta') || t.includes('fda') || t.includes('oil') || t.includes('miami neighborhood'));
 }
 
-// Returns the dashboard pipeline/category for a set of tags.
-// Miami neighborhood is checked first (it's a distinct USA campaign even when
-// the contact also carries a metodo tag), then metodo so "metodo oil&gas
-// campaign" doesn't fall into the Meta "Oil & Gas" bucket.
-function pipelineFromTags(tags) {
+// The GHL contact "source" names the exact ad campaign (e.g. "Facebook -
+// Metodo Petroleo", "Facebook - Food Manufacturer", "Facebook - Miami
+// neighborhood ES"). When it matches a known campaign it beats the tags.
+function pipelineFromSource(source) {
+  const s = String(source || '').toLowerCase();
+  if (!s.includes('facebook')) return null;
+  if (s.includes('miami')) return 'Miami Neighborhood';
+  if (s.includes('metodo alimentacion')) return 'Metodo Alimentacion';
+  if (s.includes('metodo petroleo')) return 'Metodo Oil & Gas';
+  if (s.includes('metodo contenedores')) return 'Metodo Contenedores';
+  if (s.includes('metodo')) return 'Metodo';
+  if (s.includes('food manufacturer')) return 'Food Manufacturer';
+  if (s.includes('fda')) return 'FDA';
+  if (s.includes('oil')) return 'Oil & Gas';
+  return null;
+}
+
+// Returns the dashboard pipeline/category. The GHL source wins when it names
+// a campaign; otherwise fall back to tags. Miami neighborhood is checked
+// before metodo (it's a distinct USA campaign even when the contact also
+// carries a metodo tag), and metodo before "oil" so "metodo oil&gas campaign"
+// doesn't fall into the Meta "Oil & Gas" bucket.
+function pipelineFromTags(tags, source) {
+  const bySource = pipelineFromSource(source);
+  if (bySource) return bySource;
   const normalized = normalizeTags(tags);
   const has = (s) => normalized.some(t => t.includes(s));
   if (has('miami neighborhood')) return 'Miami Neighborhood';
@@ -205,14 +233,19 @@ function transformContact(payload, customFieldMap) {
 
   const contactId = pick(bag, ['contact_id', 'contactId', 'id']) || email || name;
 
-  const pipeline = pipelineFromTags(tags);
+  const ghlSource = pick(bag, ['source', 'contact_source', 'contactSource']) || '';
+  const pipeline = pipelineFromTags(tags, ghlSource);
   const details = extractDetails(bag, pipeline === 'FDA');
+
+  // Show the real GHL campaign source (e.g. "Facebook - Metodo Alimentacion")
+  // when present; fall back to a sensible label per pipeline.
+  const fallbackSource = pipeline === 'Miami Neighborhood' ? 'Miami Neighborhood'
+    : (pipeline.startsWith('Metodo') ? 'Metodo' : 'Meta ads');
 
   const lead = {
     id: String(contactId),
     name,
-    source: pipeline === 'Miami Neighborhood' ? 'Miami Neighborhood'
-      : (pipeline.startsWith('Metodo') ? 'Metodo' : 'Meta ads'),
+    source: String(ghlSource).trim() || fallbackSource,
     pipeline,
     date: formatDisplayDate(d),
     dateISO,

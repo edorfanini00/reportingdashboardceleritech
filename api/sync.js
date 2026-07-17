@@ -35,6 +35,25 @@ module.exports = async function handler(req, res) {
 
   const debug = req.query && (req.query.debug === '1' || req.query.debug === 'true');
 
+  // One-off cleanup: ?purgeMetodo=1 removes stored metodo leads so the next
+  // sync re-imports only the Facebook-sourced ones with their real source.
+  if (req.query && (req.query.purgeMetodo === '1' || req.query.purgeMetodo === 'true')) {
+    try {
+      const all = await getAllLeads();
+      const removed = [];
+      for (const l of all) {
+        if ((l.pipeline || '').startsWith('Metodo')) {
+          await deleteLead(l.id);
+          removed.push(l.id);
+        }
+      }
+      res.status(200).json({ ok: true, purged: removed.length });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err && err.message || err) });
+    }
+    return;
+  }
+
   // One-off cleanup: ?purgeTests=1 removes leads with example.com / test.com emails.
   if (req.query && (req.query.purgeTests === '1' || req.query.purgeTests === 'true')) {
     try {
@@ -69,7 +88,7 @@ module.exports = async function handler(req, res) {
 
     for (const contact of contacts) {
       const tags = normalizeTags(contact.tags);
-      if (!hasQualifyingTag(tags)) {
+      if (!hasQualifyingTag(tags, contact.source)) {
         skipped++;
         continue;
       }
