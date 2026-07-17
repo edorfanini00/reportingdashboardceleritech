@@ -75,18 +75,22 @@ function normalizeTags(raw) {
 // (and an "fda" tag). Oil & gas campaign leads carry "oil and gas" /
 // "meta oil and gas lead". Metodo campaign leads carry "metodo campaign" /
 // "metodo alimentacion" / "metodo oil&gas campaign" / "metodo contenedores".
-// Any tag containing "meta", "fda", "oil" or "metodo" qualifies.
+// Miami neighborhood (USA) campaign leads carry "en miami neighborhoods" /
+// "es miami neighborhood". Any tag containing "meta", "fda", "oil", "metodo"
+// or "miami neighborhood" qualifies.
 function hasQualifyingTag(tags) {
   const normalized = normalizeTags(tags);
-  return normalized.some(t => t.includes('meta') || t.includes('fda') || t.includes('oil') || t.includes('metodo'));
+  return normalized.some(t => t.includes('meta') || t.includes('fda') || t.includes('oil') || t.includes('metodo') || t.includes('miami neighborhood'));
 }
 
 // Returns the dashboard pipeline/category for a set of tags.
-// Metodo is checked first so "metodo oil&gas campaign" doesn't fall into the
-// Meta "Oil & Gas" bucket.
+// Miami neighborhood is checked first (it's a distinct USA campaign even when
+// the contact also carries a metodo tag), then metodo so "metodo oil&gas
+// campaign" doesn't fall into the Meta "Oil & Gas" bucket.
 function pipelineFromTags(tags) {
   const normalized = normalizeTags(tags);
   const has = (s) => normalized.some(t => t.includes(s));
+  if (has('miami neighborhood')) return 'Miami Neighborhood';
   if (has('metodo')) {
     if (has('alimentacion')) return 'Metodo Alimentacion';
     if (has('oil')) return 'Metodo Oil & Gas';
@@ -207,7 +211,8 @@ function transformContact(payload, customFieldMap) {
   const lead = {
     id: String(contactId),
     name,
-    source: pipeline.startsWith('Metodo') ? 'Metodo' : 'Meta ads',
+    source: pipeline === 'Miami Neighborhood' ? 'Miami Neighborhood'
+      : (pipeline.startsWith('Metodo') ? 'Metodo' : 'Meta ads'),
     pipeline,
     date: formatDisplayDate(d),
     dateISO,

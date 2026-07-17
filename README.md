@@ -53,6 +53,7 @@ For contacts already tagged before the webhook existed, run each contact through
 | `metodo alimentacion` | Metodo Alimentacion |
 | `metodo oil&gas campaign` | Metodo Oil & Gas |
 | `metodo contenedores` | Metodo Contenedores |
+| `en miami neighborhoods` / `es miami neighborhood` | Miami Neighborhood |
 
 A `... meeting booked` tag (e.g. `metodo meeting booked`) also marks the lead as *Meeting Booked* in the funnel. Other tags are ignored. The dashboard merges GHL leads with existing historical data and deduplicates by contact id or email.
 

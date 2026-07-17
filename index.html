@@ -1246,16 +1246,18 @@ function populateLeadsModal() {
     const isFda = (l) => pipeOf(l) === 'FDA';
     const isFood = (l) => pipeOf(l) === 'FOOD MANUFACTURER';
     const isOil = (l) => pipeOf(l) === 'OIL & GAS';
+    const isMiami = (l) => pipeOf(l).includes('MIAMI');
     const isMetodoAlim = (l) => pipeOf(l).startsWith('METODO') && pipeOf(l).includes('ALIMENTACION');
     const isMetodoOil = (l) => pipeOf(l).startsWith('METODO') && pipeOf(l).includes('OIL');
     const isMetodoOther = (l) => pipeOf(l).startsWith('METODO') && !isMetodoAlim(l) && !isMetodoOil(l);
-    const isGeneral = (l) => !isFda(l) && !isFood(l) && !isOil(l) && !pipeOf(l).startsWith('METODO');
+    const isGeneral = (l) => !isFda(l) && !isFood(l) && !isOil(l) && !isMiami(l) && !pipeOf(l).startsWith('METODO');
     const fdaCount = allLeads.filter(isFda).length;
     const foodCount = allLeads.filter(isFood).length;
     const oilCount = allLeads.filter(isOil).length;
     const metodoCount = allLeads.filter(isMetodoOther).length;
     const metodoAlimCount = allLeads.filter(isMetodoAlim).length;
     const metodoOilCount = allLeads.filter(isMetodoOil).length;
+    const miamiCount = allLeads.filter(isMiami).length;
     const generalCount = allLeads.filter(isGeneral).length;
     // Build filter pills
     const pillBase = 'px-3 py-1.5 rounded-full text-[10px] md:text-[11px] font-black uppercase tracking-wider cursor-pointer transition-all border ';
@@ -1269,6 +1271,7 @@ function populateLeadsModal() {
     if(metodoCount > 0) filterHTML += '<button onclick="setLeadFilter(\'metodo\')" class="'+pillBase+(currentLeadFilter==='metodo'?'bg-sky-500 text-white border-sky-500 shadow-md ':pillInactive)+'">Metodo <span class="ml-1 opacity-70">'+metodoCount+'</span></button>';
     if(metodoAlimCount > 0) filterHTML += '<button onclick="setLeadFilter(\'metodo-alim\')" class="'+pillBase+(currentLeadFilter==='metodo-alim'?'bg-teal-500 text-white border-teal-500 shadow-md ':pillInactive)+'">Metodo Alimentacion <span class="ml-1 opacity-70">'+metodoAlimCount+'</span></button>';
     if(metodoOilCount > 0) filterHTML += '<button onclick="setLeadFilter(\'metodo-oil\')" class="'+pillBase+(currentLeadFilter==='metodo-oil'?'bg-indigo-500 text-white border-indigo-500 shadow-md ':pillInactive)+'">Metodo Oil &amp; Gas <span class="ml-1 opacity-70">'+metodoOilCount+'</span></button>';
+    if(miamiCount > 0) filterHTML += '<button onclick="setLeadFilter(\'miami\')" class="'+pillBase+(currentLeadFilter==='miami'?'bg-pink-500 text-white border-pink-500 shadow-md ':pillInactive)+'">Miami Neighborhood <span class="ml-1 opacity-70">'+miamiCount+'</span></button>';
     if(generalCount > 0) filterHTML += '<button onclick="setLeadFilter(\'general\')" class="'+pillBase+(currentLeadFilter==='general'?'bg-blue-500 text-white border-blue-500 shadow-md ':pillInactive)+'">General <span class="ml-1 opacity-70">'+generalCount+'</span></button>';
     filterBar.innerHTML = filterHTML;
     // Filter leads
@@ -1279,6 +1282,7 @@ function populateLeadsModal() {
     else if(currentLeadFilter === 'metodo') leads = allLeads.filter(isMetodoOther);
     else if(currentLeadFilter === 'metodo-alim') leads = allLeads.filter(isMetodoAlim);
     else if(currentLeadFilter === 'metodo-oil') leads = allLeads.filter(isMetodoOil);
+    else if(currentLeadFilter === 'miami') leads = allLeads.filter(isMiami);
     else if(currentLeadFilter === 'general') leads = allLeads.filter(isGeneral);
     if (leads.length === 0) { container.innerHTML = '<p class="text-slate-400 text-center italic py-10">No leads for this filter.</p>'; return; }
     leads.forEach((lead) => {
@@ -1294,6 +1298,7 @@ function populateLeadsModal() {
         const leadPipe = (lead.pipeline || '').toUpperCase();
         if(leadPipe === 'FDA') { modalPipelineClass = "text-red-600 bg-red-50"; }
         else if(leadPipe === 'OIL & GAS') { modalPipelineClass = "text-purple-700 bg-purple-50"; }
+        else if(leadPipe.includes('MIAMI')) { modalPipelineClass = "text-pink-700 bg-pink-50"; }
         else if(leadPipe.startsWith('METODO')) {
             if(leadPipe.includes('ALIMENTACION')) { modalPipelineClass = "text-teal-700 bg-teal-50"; }
             else if(leadPipe.includes('OIL')) { modalPipelineClass = "text-indigo-700 bg-indigo-50"; }
@@ -1317,7 +1322,7 @@ function parsePercent(str) { return parseFloat(str.replace('%', '')) || 0; }
 
 
 function getAggregatedData(keys) {
-    let agg = { outreachTotal:0, pipelineCount:0, meetingsBooked:0, meetingsAttended:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], chartFdaValues:[], chartFoodValues:[], chartOilValues:[], chartMetodoValues:[], chartMetodoAlimValues:[], chartMetodoOilValues:[], leads:[], dateRange:'' };
+    let agg = { outreachTotal:0, pipelineCount:0, meetingsBooked:0, meetingsAttended:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], chartFdaValues:[], chartFoodValues:[], chartOilValues:[], chartMetodoValues:[], chartMetodoAlimValues:[], chartMetodoOilValues:[], chartMiamiValues:[], leads:[], dateRange:'' };
     let chronKeys = [...keys].reverse();
     chronKeys.forEach(key => {
         let data = weeklyData[key]; if (!data) return;
@@ -1330,10 +1335,11 @@ function getAggregatedData(keys) {
         // Build per-day FDA/Food/Metodo counts from leads
         const weekLeads = leadsByWeek[key] || [];
         const pipeUpper = (l) => (l.pipeline || '').toUpperCase();
-        // Buckets: FDA / Oil & Gas / Metodo Alimentacion / Metodo Oil & Gas /
-        // Metodo (everything else metodo) / Food (everything else).
+        // Buckets: FDA / Oil & Gas / Miami Neighborhood / Metodo Alimentacion /
+        // Metodo Oil & Gas / Metodo (everything else metodo) / Food (everything else).
         const bucketOf = (l) => {
             const p = pipeUpper(l);
+            if (p.includes('MIAMI')) return 'miami';
             if (p.startsWith('METODO')) {
                 if (p.includes('ALIMENTACION')) return 'metodoAlim';
                 if (p.includes('OIL')) return 'metodoOil';
@@ -1345,7 +1351,7 @@ function getAggregatedData(keys) {
         };
         if (keys.length > 2) {
             agg.chartLabels.push(data.dateRange.split(' - ')[0]);
-            const totals = { fda:0, oil:0, food:0, metodo:0, metodoAlim:0, metodoOil:0 };
+            const totals = { fda:0, oil:0, food:0, metodo:0, metodoAlim:0, metodoOil:0, miami:0 };
             weekLeads.forEach(l => { totals[bucketOf(l)]++; });
             agg.chartFdaValues.push(totals.fda);
             agg.chartOilValues.push(totals.oil);
@@ -1353,13 +1359,14 @@ function getAggregatedData(keys) {
             agg.chartMetodoValues.push(totals.metodo);
             agg.chartMetodoAlimValues.push(totals.metodoAlim);
             agg.chartMetodoOilValues.push(totals.metodoOil);
+            agg.chartMiamiValues.push(totals.miami);
             agg.chartValues.push(data.chartValues.reduce((a,b)=>a+b,0));
         } else {
             agg.chartLabels.push(...data.chartLabels);
             agg.chartValues.push(...data.chartValues);
             // Count leads per day by pipeline
             data.chartLabels.forEach(label => {
-                const day = { fda:0, oil:0, food:0, metodo:0, metodoAlim:0, metodoOil:0 };
+                const day = { fda:0, oil:0, food:0, metodo:0, metodoAlim:0, metodoOil:0, miami:0 };
                 weekLeads.forEach(l => {
                     const leadLabel = l.date.replace(/^(\w{3})\s+(\d{1,2})$/, (m, mon, d) => mon + ' ' + d.padStart(2, '0'));
                     if (leadLabel === label) day[bucketOf(l)]++;
@@ -1370,6 +1377,7 @@ function getAggregatedData(keys) {
                 agg.chartMetodoValues.push(day.metodo);
                 agg.chartMetodoAlimValues.push(day.metodoAlim);
                 agg.chartMetodoOilValues.push(day.metodoOil);
+                agg.chartMiamiValues.push(day.miami);
             });
         }
         if (leadsByWeek[key]) { agg.leads.push(...leadsByWeek[key]); leadsByWeek[key].forEach(l => { if(l.meetingBooked) agg.meetingsBooked++; if(l.meetingAttended) agg.meetingsAttended++; }); }
@@ -1437,7 +1445,8 @@ function renderSummaryChart(data) {
     const hasMetodo = data.chartMetodoValues && data.chartMetodoValues.some(v => v > 0);
     const hasMetodoAlim = data.chartMetodoAlimValues && data.chartMetodoAlimValues.some(v => v > 0);
     const hasMetodoOil = data.chartMetodoOilValues && data.chartMetodoOilValues.some(v => v > 0);
-    const hasAny = hasFda || hasFood || hasOil || hasMetodo || hasMetodoAlim || hasMetodoOil;
+    const hasMiami = data.chartMiamiValues && data.chartMiamiValues.some(v => v > 0);
+    const hasAny = hasFda || hasFood || hasOil || hasMetodo || hasMetodoAlim || hasMetodoOil || hasMiami;
     let datasets = [];
     if (hasAny) {
         datasets.push({ label: 'Food Man', data: data.chartFoodValues, backgroundColor: '#f97316', borderRadius: 8, barThickness: 16 });
@@ -1446,6 +1455,7 @@ function renderSummaryChart(data) {
         if (hasMetodo) datasets.push({ label: 'Metodo', data: data.chartMetodoValues, backgroundColor: '#0ea5e9', borderRadius: 8, barThickness: 16 });
         if (hasMetodoAlim) datasets.push({ label: 'Metodo Alimentacion', data: data.chartMetodoAlimValues, backgroundColor: '#14b8a6', borderRadius: 8, barThickness: 16 });
         if (hasMetodoOil) datasets.push({ label: 'Metodo Oil & Gas', data: data.chartMetodoOilValues, backgroundColor: '#6366f1', borderRadius: 8, barThickness: 16 });
+        if (hasMiami) datasets.push({ label: 'Miami Neighborhood', data: data.chartMiamiValues, backgroundColor: '#ec4899', borderRadius: 8, barThickness: 16 });
     } else {
         datasets.push({ label: 'Leads', data: data.chartValues, backgroundColor: '#f97316', borderRadius: 8, barThickness: 16 });
     }

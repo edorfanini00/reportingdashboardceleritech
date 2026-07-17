@@ -69,6 +69,7 @@ async function searchPage({ page, pageLimit, filters, searchAfter, query }) {
 const ALWAYS_TAGS = [
   'oil and gas', 'meta oil and gas lead',
   'metodo campaign', 'metodo alimentacion', 'metodo oil&gas campaign', 'metodo contenedores',
+  'en miami neighborhoods', 'es miami neighborhood',
 ];
 function getQualifyingTagNames() {
   const fromEnv = process.env.GHL_TAGS;
