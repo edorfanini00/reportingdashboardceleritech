@@ -1475,7 +1475,11 @@ function ghlWeekRangeLabel(s) {
 function weekSortKey(k) {
     const [mon, day] = k.split('-');
     const idx = GHL_MONTHS.findIndex(m => m.toLowerCase() === mon);
-    return (idx < 0 ? 0 : idx) * 100 + parseInt(day, 10);
+    let key = (idx < 0 ? 0 : idx) * 100 + parseInt(day, 10);
+    // Week keys have no year. Months after the current month can only be from
+    // the previous year (e.g. a "nov-23" lead seen in July), so sort them first.
+    if (idx > new Date().getUTCMonth()) key -= 1200;
+    return key;
 }
 function ensureWeekBucket(key, weekStart) {
     if (!leadsByWeek[key]) leadsByWeek[key] = [];
