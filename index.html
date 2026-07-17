@@ -1242,10 +1242,21 @@ function populateLeadsModal() {
     container.innerHTML = '';
     const allLeads = currentViewData ? currentViewData.leads : [];
     const allCount = allLeads.length;
-    const fdaCount = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FDA').length;
-    const foodCount = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FOOD MANUFACTURER').length;
-    const oilCount = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'OIL & GAS').length;
-    const generalCount = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() !== 'FDA' && l.pipeline.toUpperCase() !== 'FOOD MANUFACTURER' && l.pipeline.toUpperCase() !== 'OIL & GAS').length;
+    const pipeOf = (l) => (l.pipeline || '').toUpperCase();
+    const isFda = (l) => pipeOf(l) === 'FDA';
+    const isFood = (l) => pipeOf(l) === 'FOOD MANUFACTURER';
+    const isOil = (l) => pipeOf(l) === 'OIL & GAS';
+    const isMetodoAlim = (l) => pipeOf(l).startsWith('METODO') && pipeOf(l).includes('ALIMENTACION');
+    const isMetodoOil = (l) => pipeOf(l).startsWith('METODO') && pipeOf(l).includes('OIL');
+    const isMetodoOther = (l) => pipeOf(l).startsWith('METODO') && !isMetodoAlim(l) && !isMetodoOil(l);
+    const isGeneral = (l) => !isFda(l) && !isFood(l) && !isOil(l) && !pipeOf(l).startsWith('METODO');
+    const fdaCount = allLeads.filter(isFda).length;
+    const foodCount = allLeads.filter(isFood).length;
+    const oilCount = allLeads.filter(isOil).length;
+    const metodoCount = allLeads.filter(isMetodoOther).length;
+    const metodoAlimCount = allLeads.filter(isMetodoAlim).length;
+    const metodoOilCount = allLeads.filter(isMetodoOil).length;
+    const generalCount = allLeads.filter(isGeneral).length;
     // Build filter pills
     const pillBase = 'px-3 py-1.5 rounded-full text-[10px] md:text-[11px] font-black uppercase tracking-wider cursor-pointer transition-all border ';
     const pillActive = 'bg-slate-800 text-white border-slate-800 shadow-md ';
@@ -1255,14 +1266,20 @@ function populateLeadsModal() {
     if(fdaCount > 0) filterHTML += '<button onclick="setLeadFilter(\'fda\')" class="'+pillBase+(currentLeadFilter==='fda'?'bg-red-500 text-white border-red-500 shadow-md ':pillInactive)+'">FDA <span class="ml-1 opacity-70">'+fdaCount+'</span></button>';
     if(foodCount > 0) filterHTML += '<button onclick="setLeadFilter(\'food\')" class="'+pillBase+(currentLeadFilter==='food'?'bg-orange-500 text-white border-orange-500 shadow-md ':pillInactive)+'">Food Man <span class="ml-1 opacity-70">'+foodCount+'</span></button>';
     if(oilCount > 0) filterHTML += '<button onclick="setLeadFilter(\'oil\')" class="'+pillBase+(currentLeadFilter==='oil'?'bg-purple-600 text-white border-purple-600 shadow-md ':pillInactive)+'">Oil &amp; Gas <span class="ml-1 opacity-70">'+oilCount+'</span></button>';
+    if(metodoCount > 0) filterHTML += '<button onclick="setLeadFilter(\'metodo\')" class="'+pillBase+(currentLeadFilter==='metodo'?'bg-sky-500 text-white border-sky-500 shadow-md ':pillInactive)+'">Metodo <span class="ml-1 opacity-70">'+metodoCount+'</span></button>';
+    if(metodoAlimCount > 0) filterHTML += '<button onclick="setLeadFilter(\'metodo-alim\')" class="'+pillBase+(currentLeadFilter==='metodo-alim'?'bg-teal-500 text-white border-teal-500 shadow-md ':pillInactive)+'">Metodo Alimentacion <span class="ml-1 opacity-70">'+metodoAlimCount+'</span></button>';
+    if(metodoOilCount > 0) filterHTML += '<button onclick="setLeadFilter(\'metodo-oil\')" class="'+pillBase+(currentLeadFilter==='metodo-oil'?'bg-indigo-500 text-white border-indigo-500 shadow-md ':pillInactive)+'">Metodo Oil &amp; Gas <span class="ml-1 opacity-70">'+metodoOilCount+'</span></button>';
     if(generalCount > 0) filterHTML += '<button onclick="setLeadFilter(\'general\')" class="'+pillBase+(currentLeadFilter==='general'?'bg-blue-500 text-white border-blue-500 shadow-md ':pillInactive)+'">General <span class="ml-1 opacity-70">'+generalCount+'</span></button>';
     filterBar.innerHTML = filterHTML;
     // Filter leads
     let leads = allLeads;
-    if(currentLeadFilter === 'fda') leads = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FDA');
-    else if(currentLeadFilter === 'food') leads = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'FOOD MANUFACTURER');
-    else if(currentLeadFilter === 'oil') leads = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() === 'OIL & GAS');
-    else if(currentLeadFilter === 'general') leads = allLeads.filter(l => l.pipeline && l.pipeline.toUpperCase() !== 'FDA' && l.pipeline.toUpperCase() !== 'FOOD MANUFACTURER' && l.pipeline.toUpperCase() !== 'OIL & GAS');
+    if(currentLeadFilter === 'fda') leads = allLeads.filter(isFda);
+    else if(currentLeadFilter === 'food') leads = allLeads.filter(isFood);
+    else if(currentLeadFilter === 'oil') leads = allLeads.filter(isOil);
+    else if(currentLeadFilter === 'metodo') leads = allLeads.filter(isMetodoOther);
+    else if(currentLeadFilter === 'metodo-alim') leads = allLeads.filter(isMetodoAlim);
+    else if(currentLeadFilter === 'metodo-oil') leads = allLeads.filter(isMetodoOil);
+    else if(currentLeadFilter === 'general') leads = allLeads.filter(isGeneral);
     if (leads.length === 0) { container.innerHTML = '<p class="text-slate-400 text-center italic py-10">No leads for this filter.</p>'; return; }
     leads.forEach((lead) => {
         const origIndex = allLeads.indexOf(lead);
@@ -1274,8 +1291,14 @@ function populateLeadsModal() {
         const badge = hasDetails ? '<span class="ml-2 text-[8px] font-black text-white bg-orange-500 px-2 py-0.5 rounded shadow-sm whitespace-nowrap">VIEW DETAILS</span>' : '';
         const statusBadge = lead.status === 'ongoing' ? '<span class="ml-2 text-[8px] md:text-[9px] font-black text-emerald-600 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded uppercase whitespace-nowrap">Ongoing</span>' : '';
         let modalPipelineClass = "text-orange-600 bg-orange-50";
-        if(lead.pipeline && lead.pipeline.toUpperCase() === 'FDA') { modalPipelineClass = "text-red-600 bg-red-50"; }
-        else if(lead.pipeline && lead.pipeline.toUpperCase() === 'OIL & GAS') { modalPipelineClass = "text-purple-700 bg-purple-50"; }
+        const leadPipe = (lead.pipeline || '').toUpperCase();
+        if(leadPipe === 'FDA') { modalPipelineClass = "text-red-600 bg-red-50"; }
+        else if(leadPipe === 'OIL & GAS') { modalPipelineClass = "text-purple-700 bg-purple-50"; }
+        else if(leadPipe.startsWith('METODO')) {
+            if(leadPipe.includes('ALIMENTACION')) { modalPipelineClass = "text-teal-700 bg-teal-50"; }
+            else if(leadPipe.includes('OIL')) { modalPipelineClass = "text-indigo-700 bg-indigo-50"; }
+            else { modalPipelineClass = "text-sky-700 bg-sky-50"; }
+        }
         container.innerHTML += '<div class="'+cardClasses+'" '+clickAttr+'><div class="flex flex-col sm:flex-row justify-between sm:items-center border-b '+(lead.status==='ongoing'?'border-emerald-200':'border-slate-100')+' pb-3 gap-2"><div><div class="flex flex-wrap items-center gap-1 md:gap-2"><h4 class="text-lg md:text-xl font-bold text-slate-800">'+lead.name+'</h4>'+badge+statusBadge+'</div><div class="flex flex-wrap items-center gap-2 mt-2 sm:mt-1"><span class="text-[8px] md:text-[9px] font-black text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded uppercase">'+lead.source+'</span><span class="text-[8px] md:text-[9px] font-black '+modalPipelineClass+' px-2 py-0.5 rounded uppercase">'+lead.pipeline+'</span></div></div><span class="text-[8px] md:text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded self-start sm:self-auto shrink-0">'+lead.date+'</span></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 text-[10px] md:text-[11px] font-semibold text-slate-600 pt-1"><div class="space-y-1 overflow-hidden"><p class="text-slate-400 uppercase text-[8px] md:text-[9px]">Email & Business</p><p class="truncate">'+lead.email+'</p><p class="text-orange-500 truncate">'+lead.business+'</p></div><div class="space-y-1"><p class="text-slate-400 uppercase text-[8px] md:text-[9px]">Phone</p><p>'+lead.phone+'</p></div></div></div>';
     });
 }
@@ -1294,7 +1317,7 @@ function parsePercent(str) { return parseFloat(str.replace('%', '')) || 0; }
 
 
 function getAggregatedData(keys) {
-    let agg = { outreachTotal:0, pipelineCount:0, meetingsBooked:0, meetingsAttended:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], chartFdaValues:[], chartFoodValues:[], chartOilValues:[], leads:[], dateRange:'' };
+    let agg = { outreachTotal:0, pipelineCount:0, meetingsBooked:0, meetingsAttended:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], chartFdaValues:[], chartFoodValues:[], chartOilValues:[], chartMetodoValues:[], chartMetodoAlimValues:[], chartMetodoOilValues:[], leads:[], dateRange:'' };
     let chronKeys = [...keys].reverse();
     chronKeys.forEach(key => {
         let data = weeklyData[key]; if (!data) return;
@@ -1304,35 +1327,49 @@ function getAggregatedData(keys) {
         agg.entSent += data.entSent; agg.entOpenRaw += (parsePercent(data.entOpen)/100)*data.entSent; agg.entClickRaw += (parsePercent(data.entClick)/100)*data.entSent; agg.entReplyRaw += (parsePercent(data.entReply)/100)*data.entSent;
         agg.foodSent += data.foodSent; agg.foodOpenRaw += (parsePercent(data.foodOpen)/100)*data.foodSent; agg.foodClickRaw += (parsePercent(data.foodClick)/100)*data.foodSent; agg.foodReplyRaw += (parsePercent(data.foodReply)/100)*data.foodSent;
         agg.erpSent += data.erpSent; agg.erpOpenRaw += (parsePercent(data.erpOpen)/100)*data.erpSent; agg.erpClickRaw += (parsePercent(data.erpClick)/100)*data.erpSent; agg.erpReplyRaw += (parsePercent(data.erpReply)/100)*data.erpSent;
-        // Build per-day FDA/Food counts from leads
+        // Build per-day FDA/Food/Metodo counts from leads
         const weekLeads = leadsByWeek[key] || [];
         const pipeUpper = (l) => (l.pipeline || '').toUpperCase();
+        // Buckets: FDA / Oil & Gas / Metodo Alimentacion / Metodo Oil & Gas /
+        // Metodo (everything else metodo) / Food (everything else).
+        const bucketOf = (l) => {
+            const p = pipeUpper(l);
+            if (p.startsWith('METODO')) {
+                if (p.includes('ALIMENTACION')) return 'metodoAlim';
+                if (p.includes('OIL')) return 'metodoOil';
+                return 'metodo';
+            }
+            if (p === 'FDA') return 'fda';
+            if (p === 'OIL & GAS') return 'oil';
+            return 'food';
+        };
         if (keys.length > 2) {
             agg.chartLabels.push(data.dateRange.split(' - ')[0]);
-            const fdaTotal = weekLeads.filter(l => pipeUpper(l) === 'FDA').length;
-            const oilTotal = weekLeads.filter(l => pipeUpper(l) === 'OIL & GAS').length;
-            const foodTotal = weekLeads.filter(l => pipeUpper(l) !== 'FDA' && pipeUpper(l) !== 'OIL & GAS').length;
-            agg.chartFdaValues.push(fdaTotal);
-            agg.chartOilValues.push(oilTotal);
-            agg.chartFoodValues.push(foodTotal);
+            const totals = { fda:0, oil:0, food:0, metodo:0, metodoAlim:0, metodoOil:0 };
+            weekLeads.forEach(l => { totals[bucketOf(l)]++; });
+            agg.chartFdaValues.push(totals.fda);
+            agg.chartOilValues.push(totals.oil);
+            agg.chartFoodValues.push(totals.food);
+            agg.chartMetodoValues.push(totals.metodo);
+            agg.chartMetodoAlimValues.push(totals.metodoAlim);
+            agg.chartMetodoOilValues.push(totals.metodoOil);
             agg.chartValues.push(data.chartValues.reduce((a,b)=>a+b,0));
         } else {
             agg.chartLabels.push(...data.chartLabels);
             agg.chartValues.push(...data.chartValues);
             // Count leads per day by pipeline
             data.chartLabels.forEach(label => {
-                let fdaDay = 0, oilDay = 0, foodDay = 0;
+                const day = { fda:0, oil:0, food:0, metodo:0, metodoAlim:0, metodoOil:0 };
                 weekLeads.forEach(l => {
-                    const leadLabel = l.date.replace(/^(\w{3})\s+(\d{1,2})$/, (m, mon, day) => mon + ' ' + day.padStart(2, '0'));
-                    if (leadLabel === label) {
-                        if (pipeUpper(l) === 'FDA') fdaDay++;
-                        else if (pipeUpper(l) === 'OIL & GAS') oilDay++;
-                        else foodDay++;
-                    }
+                    const leadLabel = l.date.replace(/^(\w{3})\s+(\d{1,2})$/, (m, mon, d) => mon + ' ' + d.padStart(2, '0'));
+                    if (leadLabel === label) day[bucketOf(l)]++;
                 });
-                agg.chartFdaValues.push(fdaDay);
-                agg.chartOilValues.push(oilDay);
-                agg.chartFoodValues.push(foodDay);
+                agg.chartFdaValues.push(day.fda);
+                agg.chartOilValues.push(day.oil);
+                agg.chartFoodValues.push(day.food);
+                agg.chartMetodoValues.push(day.metodo);
+                agg.chartMetodoAlimValues.push(day.metodoAlim);
+                agg.chartMetodoOilValues.push(day.metodoOil);
             });
         }
         if (leadsByWeek[key]) { agg.leads.push(...leadsByWeek[key]); leadsByWeek[key].forEach(l => { if(l.meetingBooked) agg.meetingsBooked++; if(l.meetingAttended) agg.meetingsAttended++; }); }
@@ -1397,18 +1434,25 @@ function renderSummaryChart(data) {
     const hasFda = data.chartFdaValues && data.chartFdaValues.some(v => v > 0);
     const hasFood = data.chartFoodValues && data.chartFoodValues.some(v => v > 0);
     const hasOil = data.chartOilValues && data.chartOilValues.some(v => v > 0);
+    const hasMetodo = data.chartMetodoValues && data.chartMetodoValues.some(v => v > 0);
+    const hasMetodoAlim = data.chartMetodoAlimValues && data.chartMetodoAlimValues.some(v => v > 0);
+    const hasMetodoOil = data.chartMetodoOilValues && data.chartMetodoOilValues.some(v => v > 0);
+    const hasAny = hasFda || hasFood || hasOil || hasMetodo || hasMetodoAlim || hasMetodoOil;
     let datasets = [];
-    if (hasFda || hasFood || hasOil) {
+    if (hasAny) {
         datasets.push({ label: 'Food Man', data: data.chartFoodValues, backgroundColor: '#f97316', borderRadius: 8, barThickness: 16 });
         datasets.push({ label: 'FDA', data: data.chartFdaValues, backgroundColor: '#ef4444', borderRadius: 8, barThickness: 16 });
         datasets.push({ label: 'Oil & Gas', data: data.chartOilValues, backgroundColor: '#9333ea', borderRadius: 8, barThickness: 16 });
+        if (hasMetodo) datasets.push({ label: 'Metodo', data: data.chartMetodoValues, backgroundColor: '#0ea5e9', borderRadius: 8, barThickness: 16 });
+        if (hasMetodoAlim) datasets.push({ label: 'Metodo Alimentacion', data: data.chartMetodoAlimValues, backgroundColor: '#14b8a6', borderRadius: 8, barThickness: 16 });
+        if (hasMetodoOil) datasets.push({ label: 'Metodo Oil & Gas', data: data.chartMetodoOilValues, backgroundColor: '#6366f1', borderRadius: 8, barThickness: 16 });
     } else {
         datasets.push({ label: 'Leads', data: data.chartValues, backgroundColor: '#f97316', borderRadius: 8, barThickness: 16 });
     }
     summaryChart = new Chart(ctx, {
         type: 'bar',
         data: { labels: data.chartLabels, datasets: datasets },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: hasFda || hasFood || hasOil, position: 'top', labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 12, font: { size: 10, weight: 'bold' }, color: '#64748b' } }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.dataset.label+': '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { stacked: true, grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: hasAny, position: 'top', labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 12, font: { size: 10, weight: 'bold' }, color: '#64748b' } }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.dataset.label+': '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { stacked: true, grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
     });
 }
 const GHL_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];

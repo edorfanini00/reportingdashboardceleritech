@@ -73,16 +73,26 @@ function normalizeTags(raw) {
 
 // Meta-sourced leads in GoHighLevel are tagged "meta lead" / "meta lead fda"
 // (and an "fda" tag). Oil & gas campaign leads carry "oil and gas" /
-// "meta oil and gas lead". Any tag containing "meta", "fda" or "oil" qualifies.
+// "meta oil and gas lead". Metodo campaign leads carry "metodo campaign" /
+// "metodo alimentacion" / "metodo oil&gas campaign" / "metodo contenedores".
+// Any tag containing "meta", "fda", "oil" or "metodo" qualifies.
 function hasQualifyingTag(tags) {
   const normalized = normalizeTags(tags);
-  return normalized.some(t => t.includes('meta') || t.includes('fda') || t.includes('oil'));
+  return normalized.some(t => t.includes('meta') || t.includes('fda') || t.includes('oil') || t.includes('metodo'));
 }
 
-// Returns 'FDA' / 'Food Manufacturer' / 'Oil & Gas' / 'Meta Lead' / 'General'.
+// Returns the dashboard pipeline/category for a set of tags.
+// Metodo is checked first so "metodo oil&gas campaign" doesn't fall into the
+// Meta "Oil & Gas" bucket.
 function pipelineFromTags(tags) {
   const normalized = normalizeTags(tags);
   const has = (s) => normalized.some(t => t.includes(s));
+  if (has('metodo')) {
+    if (has('alimentacion')) return 'Metodo Alimentacion';
+    if (has('oil')) return 'Metodo Oil & Gas';
+    if (has('contenedores')) return 'Metodo Contenedores';
+    return 'Metodo';
+  }
   if (has('oil')) return 'Oil & Gas';
   if (has('fda')) return 'FDA';
   if (has('food manufacturer')) return 'Food Manufacturer';
@@ -197,7 +207,7 @@ function transformContact(payload, customFieldMap) {
   const lead = {
     id: String(contactId),
     name,
-    source: 'Meta ads',
+    source: pipeline.startsWith('Metodo') ? 'Metodo' : 'Meta ads',
     pipeline,
     date: formatDisplayDate(d),
     dateISO,
@@ -206,6 +216,7 @@ function transformContact(payload, customFieldMap) {
     phone,
     tags
   };
+  if (tags.some(t => t.includes('meeting booked'))) lead.meetingBooked = true;
   if (Object.keys(details).length > 0) lead.details = details;
   return lead;
 }

@@ -64,9 +64,12 @@ async function searchPage({ page, pageLimit, filters, searchAfter, query }) {
 
 // Tags to import. GHL's tag filter matches a whole tag (not a substring),
 // so we list the exact tag names. Override with GHL_TAGS="a,b,c" in env.
-// The oil & gas campaign tags are always included so those leads appear in the
-// dashboard report even when GHL_TAGS is customized.
-const ALWAYS_TAGS = ['oil and gas', 'meta oil and gas lead'];
+// The oil & gas and metodo campaign tags are always included so those leads
+// appear in the dashboard report even when GHL_TAGS is customized.
+const ALWAYS_TAGS = [
+  'oil and gas', 'meta oil and gas lead',
+  'metodo campaign', 'metodo alimentacion', 'metodo oil&gas campaign', 'metodo contenedores',
+];
 function getQualifyingTagNames() {
   const fromEnv = process.env.GHL_TAGS;
   const base = fromEnv
