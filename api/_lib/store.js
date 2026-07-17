@@ -9,6 +9,16 @@ function isConfigured() {
 }
 
 async function saveLead(lead) {
+  // Booked/attended are sticky: once a lead was marked booked (via the Status
+  // field, a tag, or manually) a later re-sync without that signal must not
+  // un-book it.
+  try {
+    const existing = await kv.hget(HASH_KEY, lead.id);
+    if (existing) {
+      if (existing.meetingBooked && !lead.meetingBooked) lead.meetingBooked = true;
+      if (existing.meetingAttended && !lead.meetingAttended) lead.meetingAttended = true;
+    }
+  } catch { /* best effort: fall through and save as-is */ }
   await kv.hset(HASH_KEY, { [lead.id]: lead });
 }
 

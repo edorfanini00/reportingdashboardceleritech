@@ -187,6 +187,25 @@ function normalizeKey(k) {
     .trim();
 }
 
+// Clean up the free-text "Status" custom field the setters type by hand.
+// Maps typos/variants ("no asnwer", "nuture", "interesado", "call back |")
+// onto a small canonical set so the dashboard can count them reliably.
+function normalizeCallStatus(raw) {
+  const s = String(raw || '').trim().toLowerCase().replace(/[|·]+$/g, '').trim();
+  if (!s) return '';
+  if (s.includes('book')) return 'booked';
+  if (s.includes('no answer') || s.includes('no asnwer')) return 'no answer';
+  if (s.includes('answer')) return 'answered';
+  if (s.includes('not interested')) return 'not interested';
+  if (s.includes('interes')) return 'interested'; // interested / interesado
+  if (s.includes('call back') || s.includes('callback')) return 'call back';
+  if (s.includes('nurtur') || s.includes('nuture')) return 'nurture';
+  if (s.includes('abandon')) return 'abandon';
+  if (s.includes('unqualified') || s.includes('disqualified')) return 'not qualified';
+  if (s === 'new') return 'new';
+  return s;
+}
+
 // Build the lead.details object using exact, FDA-aware field-name matching.
 function extractDetails(bag, isFda) {
   const details = {};
@@ -237,6 +256,10 @@ function transformContact(payload, customFieldMap) {
   const pipeline = pipelineFromTags(tags, ghlSource);
   const details = extractDetails(bag, pipeline === 'FDA');
 
+  // The "Status" custom field tracks the call outcome (booked / call back /
+  // no answer / not interested / interested / nurture / abandon / new).
+  const callStatus = normalizeCallStatus(pick(bag, ['contact.status', 'Status', 'status']));
+
   // Show the real GHL campaign source (e.g. "Facebook - Metodo Alimentacion")
   // when present; fall back to a sensible label per pipeline.
   const fallbackSource = pipeline === 'Miami Neighborhood' ? 'Miami Neighborhood'
@@ -254,7 +277,9 @@ function transformContact(payload, customFieldMap) {
     phone,
     tags
   };
-  if (tags.some(t => t.includes('meeting booked'))) lead.meetingBooked = true;
+  if (callStatus) lead.callStatus = callStatus;
+  // Booked when the Status field says so OR the contact carries the tag.
+  if (callStatus === 'booked' || tags.some(t => t.includes('meeting booked'))) lead.meetingBooked = true;
   if (Object.keys(details).length > 0) lead.details = details;
   return lead;
 }
