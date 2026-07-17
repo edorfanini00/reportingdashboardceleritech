@@ -120,25 +120,7 @@ Sync John
 <div class="flex-1 overflow-visible md:overflow-y-auto overflow-x-hidden scroll-container md:pr-2 pb-10 md:pb-2 max-w-full">
 <!-- Tab: Summary -->
 <section id="tab-summary" class="tab-content active space-y-4">
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-<div class="glass-card p-5 md:p-6">
-<div class="flex justify-between items-start mb-4">
-<div>
-<p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Weekly Outreach</p>
-<h3 class="text-2xl md:text-3xl font-black text-slate-800 tracking-tight" id="outreachSentCount">0 Sent</h3>
-</div>
-<div class="w-8 h-8 md:w-9 md:h-9 bg-orange-50 rounded-lg flex items-center justify-center text-orange-500 shrink-0">
-<svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12"></path></svg>
-</div>
-</div>
-<div class="flex items-end gap-1 h-10 md:h-12 mb-4">
-<div class="mini-bar h-[20%] active"></div><div class="mini-bar h-[10%] active"></div><div class="mini-bar h-[30%] active"></div><div class="mini-bar h-[25%] active"></div><div class="mini-bar h-[40%] active"></div><div class="mini-bar h-[45%] active"></div><div class="mini-bar h-[22%] active"></div><div class="mini-bar h-[32%] active"></div><div class="mini-bar h-[42%] active"></div><div class="mini-bar h-[15%]"></div><div class="mini-bar h-[37%]"></div><div class="mini-bar h-[27%]"></div><div class="mini-bar h-[47%]"></div><div class="mini-bar h-[30%]"></div>
-</div>
-<div class="bg-orange-50/40 rounded-xl p-3 flex flex-col sm:flex-row sm:justify-between sm:items-center border border-orange-100/50 gap-2">
-<span class="text-[10px] sm:text-xs font-bold text-orange-600" id="outreachStatus">Calculated from Email Tabs</span>
-<span class="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-tighter text-left sm:text-right" id="outreachBreakdown">Enterpryze: 0 | Food: 0 | ERP: 0</span>
-</div>
-</div>
+<div class="grid grid-cols-1 gap-4">
 <div onclick="toggleModal(true)" class="glass-card glass-card-hover p-5 md:p-6 cursor-pointer group">
 <div class="flex justify-between items-start mb-4">
 <div>
@@ -292,6 +274,24 @@ ACTIVE PIPELINE
 </section>
 <!-- Tab: Emails -->
 <section id="tab-emails" class="tab-content space-y-4">
+<div class="glass-card p-5 md:p-6">
+<div class="flex justify-between items-start mb-4">
+<div>
+<p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Weekly Outreach</p>
+<h3 class="text-2xl md:text-3xl font-black text-slate-800 tracking-tight" id="outreachSentCount">0 Sent</h3>
+</div>
+<div class="w-8 h-8 md:w-9 md:h-9 bg-orange-50 rounded-lg flex items-center justify-center text-orange-500 shrink-0">
+<svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12"></path></svg>
+</div>
+</div>
+<div class="flex items-end gap-1 h-10 md:h-12 mb-4">
+<div class="mini-bar h-[20%] active"></div><div class="mini-bar h-[10%] active"></div><div class="mini-bar h-[30%] active"></div><div class="mini-bar h-[25%] active"></div><div class="mini-bar h-[40%] active"></div><div class="mini-bar h-[45%] active"></div><div class="mini-bar h-[22%] active"></div><div class="mini-bar h-[32%] active"></div><div class="mini-bar h-[42%] active"></div><div class="mini-bar h-[15%]"></div><div class="mini-bar h-[37%]"></div><div class="mini-bar h-[27%]"></div><div class="mini-bar h-[47%]"></div><div class="mini-bar h-[30%]"></div>
+</div>
+<div class="bg-orange-50/40 rounded-xl p-3 flex flex-col sm:flex-row sm:justify-between sm:items-center border border-orange-100/50 gap-2">
+<span class="text-[10px] sm:text-xs font-bold text-orange-600" id="outreachStatus">Calculated from Email Tabs</span>
+<span class="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-tighter text-left sm:text-right" id="outreachBreakdown">Enterpryze: 0 | Food: 0 | ERP: 0</span>
+</div>
+</div>
 <div class="flex overflow-x-auto scroll-container gap-2 mb-2 pb-1 shrink-0">
 <button onclick="switchCampaign('enterpryze')" id="pill-enterpryze" class="campaign-pill active">Enterpryze</button>
 <button onclick="switchCampaign('food')" id="pill-food" class="campaign-pill">Food Manufacturer</button>
