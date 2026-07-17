@@ -1861,19 +1861,23 @@ function rebuildWeekMetrics(key) {
         if (idx >= 0) data.chartValues[idx]++;
     });
 }
+const QUICK_RANGES = ['all-time','1-year','3-months','1-month','2-weeks','1-week'];
 function rebuildWeekSelectOptions() {
+    const sel = document.getElementById('dateRangeSelect');
     const group = document.getElementById('specificWeeksGroup');
-    if (!group) return;
-    const current = document.getElementById('dateRangeSelect').value;
+    if (!group || !sel) return;
+    const current = sel.value;
     group.innerHTML = '';
-    [...allWeeksInOrder].reverse().forEach((k, i) => {
+    [...allWeeksInOrder].reverse().forEach((k) => {
         const o = document.createElement('option');
         o.value = k;
         o.textContent = weeklyData[k] ? weeklyData[k].dateRange : k;
-        if (i === 0 && !allWeeksInOrder.includes(current)) o.selected = true;
-        else if (k === current) o.selected = true;
         group.appendChild(o);
     });
+    // Restore the selection; quick ranges (All Time etc.) must survive a
+    // rebuild, otherwise the periodic sync silently jumps to the newest week.
+    if (QUICK_RANGES.includes(current) || allWeeksInOrder.includes(current)) sel.value = current;
+    else sel.value = allWeeksInOrder[allWeeksInOrder.length - 1];
 }
 function isDuplicateLead(bucket, lead) {
     return bucket.some(l =>
