@@ -206,6 +206,47 @@ function normalizeCallStatus(raw) {
   return s;
 }
 
+// Internal/bookkeeping fields that should not show up as lead Q&A.
+const NON_DISPLAY_FIELDS = new Set(['status', 'pipeline', 'lead id', 'single line 2dhz', 'city and time']);
+
+// Collect EVERY filled custom field as { q, a } pairs, resolving ids to the
+// human field names. GHL stores each campaign's questions in its own folder
+// (Alimentacion, Petroleo VE, Miami Neighborhoods EN/ES, ...), so whichever
+// container a contact filled in is captured here and shown on the dashboard.
+function collectCustomFields(payload, customFieldMap) {
+  const out = [];
+  const seen = new Set();
+  const push = (name, value) => {
+    if (!name || value === undefined || value === null) return;
+    const v = Array.isArray(value) ? value.join(', ') : String(value).trim();
+    if (!v || looksLikeId(v)) return;
+    const nk = normalizeKey(name);
+    if (!nk || NON_DISPLAY_FIELDS.has(nk) || seen.has(nk)) return;
+    seen.add(nk);
+    out.push({ q: String(name).replace(/^contact\./, '').trim(), a: v });
+  };
+  const cf = payload.customFields || payload.custom_fields || payload.customField
+    || (payload.contact && (payload.contact.customFields || payload.contact.customField));
+  if (Array.isArray(cf)) {
+    cf.forEach(f => {
+      const value = f.value !== undefined ? f.value : (f.field_value !== undefined ? f.field_value : f.fieldValue);
+      const resolved = (f.id && customFieldMap && customFieldMap[f.id]) || null;
+      const name = (resolved && resolved.name) || f.name || f.key || f.fieldKey;
+      push(name, value);
+    });
+  } else if (cf && typeof cf === 'object') {
+    for (const [k, v] of Object.entries(cf)) push(k, v);
+  }
+  // Webhook workflows deliver form answers in customData keyed by field name.
+  if (payload.customData && typeof payload.customData === 'object') {
+    for (const [k, v] of Object.entries(payload.customData)) {
+      if (typeof v === 'object') continue;
+      push(k, v);
+    }
+  }
+  return out;
+}
+
 // Build the lead.details object using exact, FDA-aware field-name matching.
 function extractDetails(bag, isFda) {
   const details = {};
@@ -281,6 +322,8 @@ function transformContact(payload, customFieldMap) {
   // Booked when the Status field says so OR the contact carries the tag.
   if (callStatus === 'booked' || tags.some(t => t.includes('meeting booked'))) lead.meetingBooked = true;
   if (Object.keys(details).length > 0) lead.details = details;
+  const fields = collectCustomFields(payload, customFieldMap);
+  if (fields.length > 0) lead.fields = fields;
   return lead;
 }
 
