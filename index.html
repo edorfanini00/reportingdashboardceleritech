@@ -1952,38 +1952,47 @@ function rebuildWeekSelectOptions() {
     if (QUICK_RANGES.includes(current) || allWeeksInOrder.includes(current)) sel.value = current;
     else sel.value = allWeeksInOrder[allWeeksInOrder.length - 1];
 }
-function isDuplicateLead(bucket, lead) {
-    return bucket.some(l =>
-        (lead.id && l.id === lead.id) ||
-        (lead.email && lead.email !== 'Not Provided' && l.email &&
-         l.email !== 'Not Provided' && lead.email.toLowerCase() === l.email.toLowerCase())
-    );
-}
 function mergeGhlLeads(ghlLeads) {
     let added = 0;
+    // Match across ALL weeks (not just the lead's own bucket) so a GHL-synced
+    // copy of a hand-curated historical lead never shows up twice.
+    const findAnywhere = (pred) => {
+        for (const wk of Object.keys(leadsByWeek)) {
+            const idx = leadsByWeek[wk].findIndex(pred);
+            if (idx !== -1) return { wk, idx };
+        }
+        return null;
+    };
     ghlLeads.forEach(lead => {
         const iso = lead.dateISO || new Date().toISOString();
         const weekStart = ghlWeekStart(iso);
         const key = ghlWeekKey(iso);
         ensureWeekBucket(key, weekStart);
-        const bucket = leadsByWeek[key];
-        const idx = bucket.findIndex(l =>
-            (lead.id && l.id === lead.id) ||
-            (lead.email && lead.email !== 'Not Provided' && l.email &&
-             l.email !== 'Not Provided' && lead.email.toLowerCase() === l.email.toLowerCase())
-        );
-        if (idx === -1) {
-            bucket.push(lead);
-            added++;
-        } else if (lead.id && bucket[idx].id === lead.id) {
+        const byId = lead.id && findAnywhere(l => l.id === lead.id);
+        if (byId) {
             // Same GHL contact: replace with the fresh server copy so status,
             // tags and pipeline changes show up on every sync. Booked/attended
-            // stay sticky. (Email-only matches are curated historical entries
-            // and are left untouched.)
-            if (bucket[idx].meetingBooked) lead.meetingBooked = true;
-            if (bucket[idx].meetingAttended) lead.meetingAttended = true;
-            bucket[idx] = lead;
+            // stay sticky.
+            const existing = leadsByWeek[byId.wk][byId.idx];
+            if (existing.meetingBooked) lead.meetingBooked = true;
+            if (existing.meetingAttended) lead.meetingAttended = true;
+            leadsByWeek[byId.wk][byId.idx] = lead;
+            return;
         }
+        const email = lead.email && lead.email !== 'Not Provided' ? lead.email.toLowerCase() : null;
+        const byEmail = email && findAnywhere(l => l.email && l.email !== 'Not Provided' && l.email.toLowerCase() === email);
+        if (byEmail) {
+            // Curated historical entry: keep it in place but layer on the live
+            // GHL status so bookings and call outcomes stay current.
+            const existing = leadsByWeek[byEmail.wk][byEmail.idx];
+            if (lead.callStatus) existing.callStatus = lead.callStatus;
+            if (lead.tags && lead.tags.length) existing.tags = lead.tags;
+            if (lead.meetingBooked) existing.meetingBooked = true;
+            if (lead.meetingAttended) existing.meetingAttended = true;
+            return;
+        }
+        leadsByWeek[key].push(lead);
+        added++;
     });
     Object.keys(leadsByWeek).forEach(rebuildWeekMetrics);
     rebuildWeekSelectOptions();
