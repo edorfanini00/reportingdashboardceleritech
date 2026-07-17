@@ -216,6 +216,63 @@ ACTIVE PIPELINE
 <canvas id="leadsSummaryChart"></canvas>
 </div>
 </div>
+<!-- Lead Analytics -->
+<div class="flex items-center gap-2 pt-2">
+<p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Lead Analytics</p>
+<div class="flex-1 h-px bg-slate-200/70"></div>
+<p class="text-[10px] text-slate-400 font-semibold" id="analyticsContext"></p>
+</div>
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+<div class="glass-card p-3 md:p-4 text-center">
+<p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Best Day</p>
+<p class="text-lg md:text-2xl font-black text-slate-800" id="statBestDay">--</p>
+<p class="text-[9px] md:text-[10px] text-orange-500 font-bold mt-0.5" id="statBestDaySub">&nbsp;</p>
+</div>
+<div class="glass-card p-3 md:p-4 text-center">
+<p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Peak Time</p>
+<p class="text-lg md:text-2xl font-black text-slate-800" id="statPeakTime">--</p>
+<p class="text-[9px] md:text-[10px] text-orange-500 font-bold mt-0.5" id="statPeakTimeSub">&nbsp;</p>
+</div>
+<div class="glass-card p-3 md:p-4 text-center">
+<p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Avg Leads / Week</p>
+<p class="text-lg md:text-2xl font-black text-slate-800" id="statAvgWeek">--</p>
+<p class="text-[9px] md:text-[10px] text-orange-500 font-bold mt-0.5" id="statAvgWeekSub">&nbsp;</p>
+</div>
+<div class="glass-card p-3 md:p-4 text-center">
+<p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Top Campaign</p>
+<p class="text-lg md:text-2xl font-black text-slate-800 truncate" id="statTopCampaign">--</p>
+<p class="text-[9px] md:text-[10px] text-orange-500 font-bold mt-0.5" id="statTopCampaignSub">&nbsp;</p>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<div class="glass-card p-4 md:p-6">
+<h4 class="text-sm md:text-base font-bold text-slate-800 mb-1">Leads by Day of Week</h4>
+<p class="text-[10px] text-slate-400 font-medium mb-3">Which weekdays bring in the most leads</p>
+<div class="h-[200px] md:h-[230px]"><canvas id="dowChart"></canvas></div>
+</div>
+<div class="glass-card p-4 md:p-6">
+<h4 class="text-sm md:text-base font-bold text-slate-800 mb-1">Leads by Time of Day</h4>
+<p class="text-[10px] text-slate-400 font-medium mb-3">Arrival time in your local timezone (3-hour blocks)</p>
+<div class="h-[200px] md:h-[230px]"><canvas id="todChart"></canvas></div>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<div class="glass-card p-4 md:p-6">
+<h4 class="text-sm md:text-base font-bold text-slate-800 mb-1">Campaign Mix</h4>
+<p class="text-[10px] text-slate-400 font-medium mb-3">Share of leads per campaign in the selected range</p>
+<div class="h-[220px] md:h-[250px] flex items-center justify-center"><canvas id="mixChart"></canvas></div>
+</div>
+<div class="glass-card p-4 md:p-6">
+<h4 class="text-sm md:text-base font-bold text-slate-800 mb-1">Meetings Booked by Campaign</h4>
+<p class="text-[10px] text-slate-400 font-medium mb-3">Conversion from lead to booked meeting</p>
+<div class="h-[220px] md:h-[250px]"><canvas id="bookChart"></canvas></div>
+</div>
+</div>
+<div class="glass-card p-4 md:p-6">
+<h4 class="text-sm md:text-base font-bold text-slate-800 mb-1">Arrival Heatmap</h4>
+<p class="text-[10px] text-slate-400 font-medium mb-4">Day of week &times; time of day &mdash; darker means more leads</p>
+<div id="heatmapGrid" class="overflow-x-auto"></div>
+</div>
 </section>
 <!-- Tab: Emails -->
 <section id="tab-emails" class="tab-content space-y-4">
@@ -586,7 +643,7 @@ function switchTab(tabId) {
     document.getElementById('tab-' + tabId).classList.add('active');
     document.querySelectorAll('.sidebar-item').forEach(btn => btn.classList.remove('active'));
     document.getElementById('btn-' + tabId).classList.add('active');
-    if (tabId === 'summary') setTimeout(() => { if(currentViewData) renderSummaryChart(currentViewData); }, 100);
+    if (tabId === 'summary') setTimeout(() => { if(currentViewData) { renderSummaryChart(currentViewData); renderAnalytics(currentViewData); } }, 100);
     if (tabId === 'emails') switchCampaign('enterpryze');
     if (tabId === 'assistant') initChat();
     if (tabId === 'syncedjohn') initSyncedJohn();
@@ -1393,6 +1450,7 @@ function getAggregatedData(keys) {
     agg.erpOpen=fmt(agg.erpOpenRaw,agg.erpSent); agg.erpClick=fmt(agg.erpClickRaw,agg.erpSent); agg.erpReply=fmt(agg.erpReplyRaw,agg.erpSent);
     agg.outreachBreakdown = 'Enterpryze: '+agg.entSent+' | Food: '+agg.foodSent+' | ERP: '+agg.erpSent;
     agg.foodLabel = "Email Sent";
+    agg.weeksCount = chronKeys.filter(k => weeklyData[k]).length || 1;
 
     return agg;
 }
@@ -1436,7 +1494,7 @@ function handleWeekChange(rangeValue) {
     document.getElementById('funnelBookedBar').style.width = (totalLeads > 0 ? (booked/totalLeads*100) : 0)+'%';
     document.getElementById('funnelAttendedBar').style.width = (totalLeads > 0 ? (attended/totalLeads*100) : 0)+'%';
 
-    if(document.getElementById('tab-summary').classList.contains('active')) { renderSummaryChart(data); }
+    if(document.getElementById('tab-summary').classList.contains('active')) { renderSummaryChart(data); renderAnalytics(data); }
     if(document.getElementById('leadsModal').style.display === 'flex') { populateLeadsModal(); }
 }
 
@@ -1469,6 +1527,194 @@ function renderSummaryChart(data) {
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: hasAny, position: 'top', labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 12, font: { size: 10, weight: 'bold' }, color: '#64748b' } }, tooltip: { callbacks: { label: (ctx) => ' '+ctx.dataset.label+': '+ctx.raw+' Lead'+(ctx.raw!==1?'s':'') } } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, maxRotation: 45, minRotation: 45 } }, y: { stacked: true, grid: { color: 'rgba(0,0,0,0.02)' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, suggestedMax: 5 } } }
     });
 }
+/* ---------------- Lead Analytics (Summary tab) ---------------- */
+let dowChart = null, todChart = null, mixChart = null, bookChart = null;
+
+const PIPE_COLORS = [
+    ['MIAMI', '#ec4899'],
+    ['METODO ALIMENTACION', '#14b8a6'],
+    ['METODO OIL', '#6366f1'],
+    ['METODO', '#0ea5e9'],
+    ['OIL', '#9333ea'],
+    ['FDA', '#ef4444'],
+    ['FOOD', '#f97316'],
+    ['META', '#f59e0b'],
+];
+function pipeColor(pipeline) {
+    const p = (pipeline || '').toUpperCase();
+    for (const [key, color] of PIPE_COLORS) if (p.includes(key)) return color;
+    return '#64748b';
+}
+
+// Historical (hardcoded) leads only carry a "May 26"-style date; GHL leads
+// carry a full ISO timestamp. Day-of-week works for both, time-of-day only
+// for GHL leads.
+function leadDateObj(l) {
+    if (l.dateISO) { const d = new Date(l.dateISO); return isNaN(d.getTime()) ? null : d; }
+    if (l.date) { const d = new Date(l.date + ' 2026'); return isNaN(d.getTime()) ? null : d; }
+    return null;
+}
+
+const DOW_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const TOD_LABELS = ['12-3am','3-6am','6-9am','9am-12pm','12-3pm','3-6pm','6-9pm','9pm-12am'];
+const CHART_TICKS = { color: '#94a3b8', font: { size: 10, weight: 'bold' } };
+
+function renderAnalytics(data) {
+    const leads = (data && data.leads) || [];
+    const ctxEl = document.getElementById('analyticsContext');
+    if (ctxEl) ctxEl.textContent = leads.length + ' leads · ' + (data.dateRange || '');
+
+    // --- Day of week ---
+    const dowCounts = [0,0,0,0,0,0,0];
+    leads.forEach(l => { const d = leadDateObj(l); if (d) dowCounts[d.getDay()]++; });
+    const bestDowIdx = dowCounts.indexOf(Math.max(...dowCounts));
+    const bestDayFull = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][bestDowIdx];
+
+    // --- Time of day (3h blocks, local timezone, timed leads only) ---
+    const todCounts = [0,0,0,0,0,0,0,0];
+    let timedLeads = 0;
+    leads.forEach(l => {
+        if (!l.dateISO) return;
+        const d = new Date(l.dateISO);
+        if (isNaN(d.getTime())) return;
+        todCounts[Math.floor(d.getHours() / 3)]++;
+        timedLeads++;
+    });
+    const bestTodIdx = todCounts.indexOf(Math.max(...todCounts));
+
+    // --- Campaign mix + bookings per campaign ---
+    const mix = {}; const booked = {};
+    leads.forEach(l => {
+        const p = l.pipeline || 'General';
+        mix[p] = (mix[p] || 0) + 1;
+        if (l.meetingBooked) booked[p] = (booked[p] || 0) + 1;
+    });
+    const mixEntries = Object.entries(mix).sort((a, b) => b[1] - a[1]);
+
+    // --- Stat cards ---
+    const setStat = (id, v) => { const el = document.getElementById(id); if (el) el.innerHTML = v; };
+    const total = leads.length;
+    if (total && dowCounts[bestDowIdx] > 0) {
+        setStat('statBestDay', bestDayFull);
+        setStat('statBestDaySub', dowCounts[bestDowIdx] + ' leads (' + Math.round(dowCounts[bestDowIdx] / total * 100) + '%)');
+    } else { setStat('statBestDay', '--'); setStat('statBestDaySub', '&nbsp;'); }
+    if (timedLeads && todCounts[bestTodIdx] > 0) {
+        setStat('statPeakTime', TOD_LABELS[bestTodIdx]);
+        setStat('statPeakTimeSub', todCounts[bestTodIdx] + ' of ' + timedLeads + ' timed leads');
+    } else { setStat('statPeakTime', '--'); setStat('statPeakTimeSub', '&nbsp;'); }
+    setStat('statAvgWeek', total ? (total / (data.weeksCount || 1)).toFixed(1) : '--');
+    setStat('statAvgWeekSub', total ? ('across ' + (data.weeksCount || 1) + ' week' + ((data.weeksCount || 1) !== 1 ? 's' : '')) : '&nbsp;');
+    if (mixEntries.length) {
+        setStat('statTopCampaign', mixEntries[0][0]);
+        setStat('statTopCampaignSub', mixEntries[0][1] + ' leads (' + Math.round(mixEntries[0][1] / total * 100) + '%)');
+    } else { setStat('statTopCampaign', '--'); setStat('statTopCampaignSub', '&nbsp;'); }
+
+    const baseOpts = {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { grid: { display: false }, ticks: CHART_TICKS },
+            y: { grid: { color: 'rgba(0,0,0,0.03)' }, ticks: { ...CHART_TICKS, stepSize: 1 }, beginAtZero: true }
+        }
+    };
+
+    // --- Day-of-week chart ---
+    if (dowChart) dowChart.destroy();
+    const dowEl = document.getElementById('dowChart');
+    if (dowEl) dowChart = new Chart(dowEl.getContext('2d'), {
+        type: 'bar',
+        data: { labels: DOW_LABELS, datasets: [{ data: dowCounts, backgroundColor: DOW_LABELS.map((_, i) => i === bestDowIdx ? '#f97316' : 'rgba(249,115,22,0.35)'), borderRadius: 8, barThickness: 22 }] },
+        options: baseOpts
+    });
+
+    // --- Time-of-day chart ---
+    if (todChart) todChart.destroy();
+    const todEl = document.getElementById('todChart');
+    if (todEl) todChart = new Chart(todEl.getContext('2d'), {
+        type: 'bar',
+        data: { labels: TOD_LABELS, datasets: [{ data: todCounts, backgroundColor: TOD_LABELS.map((_, i) => i === bestTodIdx ? '#0ea5e9' : 'rgba(14,165,233,0.35)'), borderRadius: 8, barThickness: 22 }] },
+        options: baseOpts
+    });
+
+    // --- Campaign mix doughnut ---
+    if (mixChart) mixChart.destroy();
+    const mixEl = document.getElementById('mixChart');
+    if (mixEl) mixChart = new Chart(mixEl.getContext('2d'), {
+        type: 'doughnut',
+        data: {
+            labels: mixEntries.map(e => e[0]),
+            datasets: [{ data: mixEntries.map(e => e[1]), backgroundColor: mixEntries.map(e => pipeColor(e[0])), borderWidth: 2, borderColor: '#ffffff' }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, cutout: '62%',
+            plugins: {
+                legend: { position: 'right', labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 10, font: { size: 10, weight: 'bold' }, color: '#64748b' } },
+                tooltip: { callbacks: { label: (c) => ' ' + c.label + ': ' + c.raw + ' (' + Math.round(c.raw / total * 100) + '%)' } }
+            }
+        }
+    });
+
+    // --- Meetings booked by campaign ---
+    if (bookChart) bookChart.destroy();
+    const bookEl = document.getElementById('bookChart');
+    if (bookEl) bookChart = new Chart(bookEl.getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: mixEntries.map(e => e[0]),
+            datasets: [
+                { label: 'Leads', data: mixEntries.map(e => e[1]), backgroundColor: mixEntries.map(e => pipeColor(e[0]) + '55'), borderRadius: 6, barThickness: 14 },
+                { label: 'Booked', data: mixEntries.map(e => booked[e[0]] || 0), backgroundColor: mixEntries.map(e => pipeColor(e[0])), borderRadius: 6, barThickness: 14 }
+            ]
+        },
+        options: {
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'rectRounded', padding: 10, font: { size: 10, weight: 'bold' }, color: '#64748b' } },
+                tooltip: { callbacks: { label: (c) => {
+                    if (c.dataset.label === 'Booked') {
+                        const t = mixEntries[c.dataIndex][1];
+                        return ' Booked: ' + c.raw + (t ? ' (' + Math.round(c.raw / t * 100) + '% of leads)' : '');
+                    }
+                    return ' Leads: ' + c.raw;
+                } } }
+            },
+            scales: {
+                x: { grid: { color: 'rgba(0,0,0,0.03)' }, ticks: { ...CHART_TICKS, stepSize: 1 }, beginAtZero: true },
+                y: { grid: { display: false }, ticks: CHART_TICKS }
+            }
+        }
+    });
+
+    // --- Heatmap (day x 3h block, timed leads only) ---
+    const grid = document.getElementById('heatmapGrid');
+    if (grid) {
+        const cells = Array.from({ length: 7 }, () => [0,0,0,0,0,0,0,0]);
+        let maxCell = 0;
+        leads.forEach(l => {
+            if (!l.dateISO) return;
+            const d = new Date(l.dateISO);
+            if (isNaN(d.getTime())) return;
+            const v = ++cells[d.getDay()][Math.floor(d.getHours() / 3)];
+            if (v > maxCell) maxCell = v;
+        });
+        let html = '<div style="display:grid;grid-template-columns:44px repeat(8,minmax(52px,1fr));gap:4px;min-width:520px;">';
+        html += '<div></div>' + TOD_LABELS.map(t => '<div class="text-center text-[8px] font-bold text-slate-400 uppercase">' + t + '</div>').join('');
+        for (let day = 0; day < 7; day++) {
+            html += '<div class="text-[9px] font-bold text-slate-400 uppercase flex items-center">' + DOW_LABELS[day] + '</div>';
+            for (let b = 0; b < 8; b++) {
+                const v = cells[day][b];
+                const alpha = maxCell ? (v / maxCell) : 0;
+                const bg = v === 0 ? 'rgba(100,116,139,0.06)' : 'rgba(249,115,22,' + (0.15 + alpha * 0.85).toFixed(2) + ')';
+                const fg = alpha > 0.55 ? 'white' : '#475569';
+                html += '<div title="' + DOW_LABELS[day] + ' ' + TOD_LABELS[b] + ': ' + v + ' lead' + (v !== 1 ? 's' : '') + '" style="background:' + bg + ';color:' + fg + ';" class="h-7 rounded-md flex items-center justify-center text-[9px] font-black">' + (v || '') + '</div>';
+            }
+        }
+        html += '</div>';
+        if (!timedLeads) html = '<p class="text-slate-400 text-xs italic text-center py-6">No timed leads in this range yet — GHL-synced leads will fill this in.</p>';
+        grid.innerHTML = html;
+    }
+}
+
 const GHL_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function ghlPad2(n) { return String(n).padStart(2, '0'); }
 function ghlWeekStart(iso) {
