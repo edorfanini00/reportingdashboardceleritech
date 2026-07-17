@@ -106,8 +106,8 @@ Synced Jhon
 <span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></span>
 GoHighLevel
 </div>
-<button onclick="refreshGhlLeads(true)" id="refreshBtn" type="button" class="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl px-3 py-2 text-[11px] font-bold shadow-sm transition-colors">
-<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+<button onclick="queueGhlSync(true)" id="refreshBtn" type="button" class="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl px-3 py-2 text-[11px] font-bold shadow-sm transition-colors">
+<svg id="refreshBtnIcon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
 Sync
 </button>
 <button onclick="syncJohn()" id="syncJohnBtn" type="button" title="Scan John's emails and import new leads into the dashboard queue for review" class="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-3 py-2 text-[11px] font-bold shadow-sm transition-colors">
@@ -1896,9 +1896,23 @@ function mergeGhlLeads(ghlLeads) {
         const weekStart = ghlWeekStart(iso);
         const key = ghlWeekKey(iso);
         ensureWeekBucket(key, weekStart);
-        if (!isDuplicateLead(leadsByWeek[key], lead)) {
-            leadsByWeek[key].push(lead);
+        const bucket = leadsByWeek[key];
+        const idx = bucket.findIndex(l =>
+            (lead.id && l.id === lead.id) ||
+            (lead.email && lead.email !== 'Not Provided' && l.email &&
+             l.email !== 'Not Provided' && lead.email.toLowerCase() === l.email.toLowerCase())
+        );
+        if (idx === -1) {
+            bucket.push(lead);
             added++;
+        } else if (lead.id && bucket[idx].id === lead.id) {
+            // Same GHL contact: replace with the fresh server copy so status,
+            // tags and pipeline changes show up on every sync. Booked/attended
+            // stay sticky. (Email-only matches are curated historical entries
+            // and are left untouched.)
+            if (bucket[idx].meetingBooked) lead.meetingBooked = true;
+            if (bucket[idx].meetingAttended) lead.meetingAttended = true;
+            bucket[idx] = lead;
         }
     });
     Object.keys(leadsByWeek).forEach(rebuildWeekMetrics);
@@ -1992,7 +2006,7 @@ async function sendJohnKeys(keys) {
         showGhlBanner(msg);
         keys.forEach(k => johnSelectedKeys.delete(k));
         renderSyncedJohn(data);
-        refreshGhlLeads(true);
+        queueGhlSync(true);
     } catch (e) {
         showGhlBanner('Send could not reach /api/sync-john (' + e.message + ').');
     }
@@ -2254,14 +2268,39 @@ async function pullFromGhl() {
         return { ok: false, error: e.message };
     }
 }
+// Serializes syncs so a click during a background refresh is never dropped:
+// it queues a fresh full pull that runs as soon as the current one finishes.
+let ghlSyncBusy = false;
+let ghlSyncQueuedPull = false;
+async function queueGhlSync(pull = false) {
+    if (ghlSyncBusy) { if (pull) ghlSyncQueuedPull = true; return; }
+    ghlSyncBusy = true;
+    try {
+        let doPull = pull;
+        do {
+            ghlSyncQueuedPull = false;
+            await refreshGhlLeads(doPull);
+            doPull = true;
+        } while (ghlSyncQueuedPull);
+    } finally {
+        ghlSyncBusy = false;
+    }
+}
 // pull=true first asks the server to fetch new leads from GHL, then reads them.
 async function refreshGhlLeads(pull = false) {
     const btn = document.getElementById('refreshBtn');
+    const icon = document.getElementById('refreshBtnIcon');
     btn.disabled = true;
     btn.classList.add('opacity-60');
+    if (icon) icon.classList.add('animate-spin');
     setSyncStatus(pull ? 'Pulling from GoHighLevel…' : 'Syncing…');
     try {
-        if (pull) await pullFromGhl();
+        if (pull) {
+            const pulled = await pullFromGhl();
+            if (pulled && pulled.ok === false) {
+                showGhlBanner('GoHighLevel pull failed: ' + (pulled.error || 'unknown error') + '. Showing last stored leads.');
+            }
+        }
         const r = await fetch('/api/leads', { cache: 'no-store' });
         const j = await r.json();
         if (j.configured === false) {
@@ -2282,17 +2321,18 @@ async function refreshGhlLeads(pull = false) {
     } finally {
         btn.disabled = false;
         btn.classList.remove('opacity-60');
+        if (icon) icon.classList.remove('animate-spin');
     }
 }
 window.onload = () => {
     handleWeekChange('may-18');
     // On load, pull from GHL so the dashboard reflects the latest leads even if
     // a webhook delivery was missed.
-    refreshGhlLeads(true);
+    queueGhlSync(true);
     // Light read of stored leads every 60s (picks up webhook-delivered leads).
-    setInterval(() => refreshGhlLeads(false), 60000);
+    setInterval(() => queueGhlSync(false), 60000);
     // Full pull from GHL every 4 min as a backstop for any missed webhooks.
-    setInterval(() => refreshGhlLeads(true), 240000);
+    setInterval(() => queueGhlSync(true), 240000);
 };
 </script>
 </body>
