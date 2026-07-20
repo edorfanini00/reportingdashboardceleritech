@@ -2464,13 +2464,11 @@ async function refreshGhlLeads(pull = false) {
 }
 window.onload = () => {
     handleWeekChange('may-18');
-    // On load, pull from GHL so the dashboard reflects the latest leads even if
-    // a webhook delivery was missed.
-    queueGhlSync(true);
-    // Light read of stored leads every 60s (picks up webhook-delivered leads).
-    setInterval(() => queueGhlSync(false), 60000);
-    // Full pull from GHL every 4 min as a backstop for any missed webhooks.
-    setInterval(() => queueGhlSync(true), 240000);
+    // Manual-refresh model: on load we only READ the already-stored leads
+    // (one cheap KV command). Pulling fresh data from GoHighLevel happens
+    // ONLY when the user clicks the Refresh button — no background polling,
+    // so an open dashboard tab no longer consumes the KV request quota.
+    queueGhlSync(false);
 };
 </script>
 </body>

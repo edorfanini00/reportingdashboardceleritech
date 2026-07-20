@@ -678,8 +678,9 @@ async function importFromGhl() {
 }
 
 window.onload = () => {
+    // Read stored leads once on load; refresh only via the buttons (no polling,
+    // so an open tab doesn't consume the KV request quota).
     refreshLeads();
-    setInterval(refreshLeads, 60000);
 };
 </script>
 </body>
