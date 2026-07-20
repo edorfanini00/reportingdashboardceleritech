@@ -153,7 +153,7 @@ ACTIVE PIPELINE
 </div>
 </div>
 <div class="grid grid-cols-3 gap-3 md:gap-4 mb-5">
-<div class="text-center bg-slate-50/80 rounded-2xl p-3 md:p-4 border border-slate-100/50">
+<div onclick="showFunnelLeads('all')" class="text-center bg-slate-50/80 rounded-2xl p-3 md:p-4 border border-slate-100/50 cursor-pointer hover:bg-slate-100 hover:shadow-md transition-all">
 <p class="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Total Leads</p>
 <p class="text-2xl md:text-3xl font-black text-slate-800" id="funnelTotalLeads">0</p>
 </div>
@@ -254,11 +254,12 @@ ACTIVE PIPELINE
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
 <div class="glass-card p-4 md:p-6">
 <div class="flex justify-between items-start mb-1">
-<h4 class="text-sm md:text-base font-bold text-slate-800">Call Outcomes</h4>
+<h4 class="text-sm md:text-base font-bold text-slate-800">Status</h4>
 <span class="text-[9px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-lg uppercase tracking-wider" id="bookedRateBadge">0% booked</span>
 </div>
-<p class="text-[10px] text-slate-400 font-medium mb-4">From the GoHighLevel contact Status field (tags as fallback)</p>
+<p class="text-[10px] text-slate-400 font-medium mb-4">The GoHighLevel Status field, exactly as written &mdash; click a row to see the contacts</p>
 <div id="callOutcomes" class="space-y-2.5"></div>
+<div id="reasonBreakdown"></div>
 </div>
 <div class="glass-card p-4 md:p-6">
 <h4 class="text-sm md:text-base font-bold text-slate-800 mb-1">Reply Sentiment</h4>
@@ -530,25 +531,70 @@ Send Selected
 </div>
 <script>
 function toggleFunnelModal(show) { document.getElementById('funnelModal').style.display = show ? 'flex' : 'none'; }
-function showFunnelLeads(type) {
-    const allLeads = [];
-    Object.values(leadsByWeek).forEach(weekLeads => { weekLeads.forEach(l => { if(type === 'booked' && l.meetingBooked) allLeads.push(l); if(type === 'attended' && l.meetingAttended) allLeads.push(l); }); });
-    const title = type === 'booked' ? 'Meetings Booked' : 'Meetings Attended';
-    const accentColor = type === 'booked' ? 'orange' : 'emerald';
+
+// The exact GHL Status wording for a lead (verbatim), with tag fallback for
+// older leads, or "No Status Yet".
+function statusKeyOf(l) {
+    const raw = String(l.statusText || l.callStatus || '').trim();
+    if (raw) return raw;
+    const ts = (l.tags || []).map(t => String(t).toLowerCase());
+    if (l.meetingBooked || ts.some(t => t.includes('meeting booked'))) return 'Booked';
+    return 'No Status Yet';
+}
+
+// Shared contact-list modal (used by funnel stats, Status rows, Reason rows).
+function renderContactListModal(title, list, accent) {
     document.getElementById('funnelModalTitle').innerText = title;
     const subEl = document.getElementById('funnelModalSubtitle');
-    subEl.innerText = allLeads.length + ' lead' + (allLeads.length !== 1 ? 's' : '') + ' — All Time';
-    subEl.className = 'text-[10px] md:text-[11px] font-bold text-'+accentColor+'-500 uppercase tracking-widest mt-1';
+    subEl.innerText = list.length + ' contact' + (list.length !== 1 ? 's' : '');
+    subEl.className = 'text-[10px] md:text-[11px] font-bold text-' + (accent || 'orange') + '-500 uppercase tracking-widest mt-1';
     subEl.style.color = '';
     const container = document.getElementById('funnelModalContent');
     container.innerHTML = '';
-    allLeads.forEach(lead => {
-        const attendedBadge = lead.meetingAttended ? '<span class="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded uppercase">Attended</span>' : '<span class="text-[8px] font-black text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded uppercase">Booked</span>';
+    list.forEach(lead => {
         const camp = canonicalPipe(lead.pipeline);
         const campBadge = '<span class="text-[8px] font-black px-2 py-0.5 rounded uppercase border" style="color:' + pipeColor(camp) + ';background:' + pipeColor(camp) + '15;border-color:' + pipeColor(camp) + '44;">' + escapeHtml(camp) + '</span>';
-        container.innerHTML += '<div class="bg-white/60 border border-slate-100 p-4 rounded-[20px] shadow-sm"><div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-2"><div><h4 class="text-base md:text-lg font-bold text-slate-800">'+lead.name+'</h4><p class="text-[9px] font-black text-orange-500 uppercase mt-0.5">'+lead.business+'</p></div><div class="flex items-center gap-1.5">'+campBadge+attendedBadge+'</div></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] md:text-[11px] font-semibold text-slate-600"><div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Email</p><p class="truncate">'+lead.email+'</p></div><div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Phone</p><p>'+lead.phone+'</p></div></div></div>';
+        let stateBadge = '';
+        if (lead.meetingAttended) stateBadge = '<span class="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded uppercase">Attended</span>';
+        else if (lead.meetingBooked) stateBadge = '<span class="text-[8px] font-black text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded uppercase">Booked</span>';
+        const statusTxt = String(lead.statusText || lead.callStatus || '').trim();
+        const statusLine = statusTxt ? '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Status</p><p>' + escapeHtml(statusTxt) + '</p></div>' : '';
+        const reasonLine = lead.reason ? '<div class="space-y-0.5 col-span-1 sm:col-span-2"><p class="text-slate-400 uppercase text-[8px]">Reason</p><p>' + escapeHtml(String(lead.reason)) + '</p></div>' : '';
+        container.innerHTML += '<div class="bg-white/60 border border-slate-100 p-4 rounded-[20px] shadow-sm">'
+            + '<div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-2"><div><h4 class="text-base md:text-lg font-bold text-slate-800">' + escapeHtml(lead.name || '') + '</h4><p class="text-[9px] font-black text-orange-500 uppercase mt-0.5">' + escapeHtml(lead.business || '') + '</p></div><div class="flex items-center gap-1.5">' + campBadge + stateBadge + '</div></div>'
+            + '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] md:text-[11px] font-semibold text-slate-600">'
+            + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Email</p><p class="truncate">' + escapeHtml(lead.email || '') + '</p></div>'
+            + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Phone</p><p>' + escapeHtml(lead.phone || '') + '</p></div>'
+            + statusLine + reasonLine
+            + '</div></div>';
     });
     toggleFunnelModal(true);
+}
+
+function showFunnelLeads(type) {
+    const allLeads = [];
+    Object.values(leadsByWeek).forEach(weekLeads => { weekLeads.forEach(l => {
+        if (type === 'all') allLeads.push(l);
+        else if (type === 'booked' && l.meetingBooked) allLeads.push(l);
+        else if (type === 'attended' && l.meetingAttended) allLeads.push(l);
+    }); });
+    const title = type === 'all' ? 'All Leads' : (type === 'booked' ? 'Meetings Booked' : 'Meetings Attended');
+    const accent = type === 'all' ? 'slate' : (type === 'booked' ? 'orange' : 'emerald');
+    renderContactListModal(title + ' — All Time', allLeads, accent);
+}
+
+// Contacts behind a Status row (selected date range).
+function showStatusLeads(encoded) {
+    const label = decodeURIComponent(encoded);
+    const leads = ((currentViewData && currentViewData.leads) || []).filter(l => statusKeyOf(l) === label);
+    renderContactListModal('Status: ' + label, leads, 'orange');
+}
+
+// Contacts behind a Reason row (selected date range).
+function showReasonLeads(encoded) {
+    const label = decodeURIComponent(encoded);
+    const leads = ((currentViewData && currentViewData.leads) || []).filter(l => String(l.reason || '').trim() === label);
+    renderContactListModal('Reason: ' + label, leads, 'purple');
 }
 
 let summaryChart = null;
@@ -1878,31 +1924,39 @@ function renderAnalytics(data) {
         }
     });
 
-    // --- Call outcomes + reply sentiment ---
-    // The GHL "Status" custom field (synced as lead.callStatus) is the source
-    // of truth for the call outcome; tags are the fallback for older leads.
+    // --- Status (verbatim GHL Status field) + reply sentiment ---
     const tagsOf = (l) => (l.tags || []).map(t => String(t).toLowerCase());
-    let cBooked = 0, cNotInterested = 0, cCallback = 0, cAnswered = 0, cNoAnswer = 0, cNoOutcome = 0;
+    let cBooked = 0;
     let rPos = 0, rNeg = 0;
     leads.forEach(l => {
         const ts = tagsOf(l);
         const has = (s) => ts.some(t => t.includes(s));
-        const st = String(l.callStatus || '').toLowerCase();
         if (has('positive reply')) rPos++;
         else if (has('negative reply')) rNeg++;
-        // One status per lead, most advanced outcome wins.
-        if (l.meetingBooked || st === 'booked' || has('meeting booked')) { cBooked++; return; }
-        if (st === 'not interested' || st === 'not qualified' || has('not interested') || has('unsubscribed') || ts.includes('remove')) { cNotInterested++; return; }
-        if (st === 'call back' || st === 'nurture' || ts.includes('hold') || has('call back') || has('callback') || has('follow-up')) { cCallback++; return; }
-        if (st === 'answered' || st === 'interested' || ts.includes('call answer') || ts.includes('answer') || has('call answered')) { cAnswered++; return; }
-        if (st === 'no answer' || st === 'abandon' || has('call no answer') || has('no voicemail') || has('left voicemail')) { cNoAnswer++; return; }
-        cNoOutcome++;
+        if (l.meetingBooked || String(l.callStatus || '').toLowerCase() === 'booked' || has('meeting booked')) cBooked++;
     });
-    const outcomeRow = (label, count, color) => {
+
+    // Group by the setter's EXACT status wording so the card mirrors what's
+    // typed in GoHighLevel. Leads without a Status fall into "No Status Yet".
+    const statusGroups = {};
+    leads.forEach(l => {
+        const key = statusKeyOf(l);
+        statusGroups[key] = (statusGroups[key] || 0) + 1;
+    });
+    const STATUS_COLORS = ['#10b981', '#f59e0b', '#0ea5e9', '#8b5cf6', '#ef4444', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
+    const statusColor = (label, i) => {
+        const s = label.toLowerCase();
+        if (s.includes('book')) return '#10b981';
+        if (s.includes('not interested') || s.includes('remove')) return '#ef4444';
+        if (s.includes('no answer')) return '#94a3b8';
+        if (s === 'no status yet') return '#cbd5e1';
+        return STATUS_COLORS[i % STATUS_COLORS.length];
+    };
+    const outcomeRow = (label, count, color, onclick) => {
         const pct = total ? (count / total * 100) : 0;
-        return '<div>'
+        return '<div' + (onclick ? ' onclick="' + onclick + '" class="cursor-pointer group"' : '') + '>'
             + '<div class="flex justify-between items-center mb-1">'
-            + '<span class="text-[10px] md:text-[11px] font-bold text-slate-600">' + label + '</span>'
+            + '<span class="text-[10px] md:text-[11px] font-bold text-slate-600' + (onclick ? ' group-hover:text-orange-600 transition-colors' : '') + '">' + escapeHtml(label) + '</span>'
             + '<span class="text-[10px] md:text-[11px] font-black text-slate-700">' + count + ' <span class="text-slate-400 font-bold">(' + pct.toFixed(1) + '%)</span></span>'
             + '</div>'
             + '<div class="h-2.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full rounded-full transition-all duration-700" style="width:' + pct + '%;background:' + color + ';"></div></div>'
@@ -1910,13 +1964,34 @@ function renderAnalytics(data) {
     };
     const outcomesEl = document.getElementById('callOutcomes');
     if (outcomesEl) {
-        outcomesEl.innerHTML =
-            outcomeRow('Meeting Booked', cBooked, '#10b981')
-            + outcomeRow('Call Back / On Hold', cCallback, '#f59e0b')
-            + outcomeRow('Answered', cAnswered, '#0ea5e9')
-            + outcomeRow('No Answer', cNoAnswer, '#94a3b8')
-            + outcomeRow('Not Interested', cNotInterested, '#ef4444')
-            + outcomeRow('No Outcome Yet', cNoOutcome, '#cbd5e1');
+        const entries = Object.entries(statusGroups).sort((a, b) => {
+            if (a[0] === 'No Status Yet') return 1;
+            if (b[0] === 'No Status Yet') return -1;
+            return b[1] - a[1];
+        });
+        outcomesEl.innerHTML = entries.map(([label, count], i) =>
+            outcomeRow(label, count, statusColor(label, i), "showStatusLeads('" + encodeURIComponent(label) + "')")
+        ).join('');
+    }
+    // Contacts that carry the GHL "Reason" field, grouped by its exact text.
+    const reasonEl = document.getElementById('reasonBreakdown');
+    if (reasonEl) {
+        const reasonGroups = {};
+        leads.forEach(l => {
+            const r = String(l.reason || '').trim();
+            if (r) reasonGroups[r] = (reasonGroups[r] || 0) + 1;
+        });
+        const rEntries = Object.entries(reasonGroups).sort((a, b) => b[1] - a[1]);
+        reasonEl.innerHTML = !rEntries.length ? '' :
+            '<div class="flex items-center gap-2 mt-5 mb-3">'
+            + '<p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Reason (from GoHighLevel)</p>'
+            + '<div class="flex-1 h-px bg-slate-200/70"></div>'
+            + '</div>'
+            + '<div class="space-y-2.5">'
+            + rEntries.map(([label, count], i) =>
+                outcomeRow(label, count, STATUS_COLORS[(i + 3) % STATUS_COLORS.length], "showReasonLeads('" + encodeURIComponent(label) + "')")
+              ).join('')
+            + '</div>';
     }
     const badge = document.getElementById('bookedRateBadge');
     if (badge) badge.textContent = (total ? (cBooked / total * 100).toFixed(1) : '0') + '% booked';
@@ -2104,6 +2179,8 @@ function mergeGhlLeads(ghlLeads) {
             // GHL status so bookings and call outcomes stay current.
             const existing = leadsByWeek[byPerson.wk][byPerson.idx];
             if (lead.callStatus) existing.callStatus = lead.callStatus;
+            if (lead.statusText) existing.statusText = lead.statusText;
+            if (lead.reason) existing.reason = lead.reason;
             if (lead.tags && lead.tags.length) existing.tags = lead.tags;
             if (lead.fields && lead.fields.length) existing.fields = lead.fields;
             if (lead.meetingBooked) existing.meetingBooked = true;

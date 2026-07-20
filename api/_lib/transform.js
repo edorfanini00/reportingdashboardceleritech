@@ -299,7 +299,12 @@ function transformContact(payload, customFieldMap) {
 
   // The "Status" custom field tracks the call outcome (booked / call back /
   // no answer / not interested / interested / nurture / abandon / new).
-  const callStatus = normalizeCallStatus(pick(bag, ['contact.status', 'Status', 'status']));
+  // statusText keeps the setter's exact wording for display; callStatus is the
+  // normalized version used for counting/booked detection.
+  const rawStatus = String(pick(bag, ['contact.status', 'Status', 'status']) || '').trim();
+  const callStatus = normalizeCallStatus(rawStatus);
+  // The "Reason" custom field (e.g. why not interested / call back reason).
+  const rawReason = String(pick(bag, ['contact.reason', 'Reason', 'reason']) || '').trim();
 
   // Show the real GHL campaign source (e.g. "Facebook - Metodo Alimentacion")
   // when present; fall back to a sensible label per pipeline.
@@ -319,6 +324,8 @@ function transformContact(payload, customFieldMap) {
     tags
   };
   if (callStatus) lead.callStatus = callStatus;
+  if (rawStatus && !looksLikeId(rawStatus)) lead.statusText = rawStatus;
+  if (rawReason && !looksLikeId(rawReason)) lead.reason = rawReason;
   // Booked when the Status field says so OR the contact carries the tag.
   if (callStatus === 'booked' || tags.some(t => t.includes('meeting booked'))) lead.meetingBooked = true;
   if (Object.keys(details).length > 0) lead.details = details;
