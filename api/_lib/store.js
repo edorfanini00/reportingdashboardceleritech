@@ -22,6 +22,39 @@ async function saveLead(lead) {
   await kv.hset(HASH_KEY, { [lead.id]: lead });
 }
 
+// Read the whole hash once (1 Redis command) as an id -> lead map.
+async function getAllLeadsMap() {
+  const all = await kv.hgetall(HASH_KEY);
+  return all || {};
+}
+
+// Bulk save: applies the sticky booked/attended merge against a pre-fetched
+// existing map, skips unchanged leads, and writes the rest in a few large
+// hset calls. Replaces the per-lead hget+hset pattern that cost 2 Redis
+// commands per contact per sync and exhausted the KV free-tier quota.
+async function saveLeadsBulk(leads, existingMap) {
+  const toWrite = {};
+  let unchanged = 0;
+  for (const lead of leads) {
+    const existing = existingMap ? existingMap[lead.id] : null;
+    if (existing) {
+      if (existing.meetingBooked && !lead.meetingBooked) lead.meetingBooked = true;
+      if (existing.meetingAttended && !lead.meetingAttended) lead.meetingAttended = true;
+      if (JSON.stringify(existing) === JSON.stringify(lead)) { unchanged++; continue; }
+    }
+    toWrite[lead.id] = lead;
+  }
+  const ids = Object.keys(toWrite);
+  // Chunk so a single request never approaches Upstash's request-size limit.
+  const CHUNK = 50;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = {};
+    for (const id of ids.slice(i, i + CHUNK)) slice[id] = toWrite[id];
+    await kv.hset(HASH_KEY, slice);
+  }
+  return { written: ids.length, unchanged };
+}
+
 async function getAllLeads() {
   const all = await kv.hgetall(HASH_KEY);
   if (!all) return [];
@@ -33,4 +66,4 @@ async function deleteLead(id) {
   await kv.hdel(HASH_KEY, id);
 }
 
-module.exports = { saveLead, getAllLeads, deleteLead, isConfigured, HASH_KEY };
+module.exports = { saveLead, saveLeadsBulk, getAllLeads, getAllLeadsMap, deleteLead, isConfigured, HASH_KEY };

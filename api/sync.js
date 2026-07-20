@@ -1,6 +1,6 @@
 // Bulk import: pulls ALL GHL contacts, keeps those tagged meta / meta fda.
 const { transformContact, hasQualifyingTag, normalizeTags } = require('./_lib/transform');
-const { saveLead, isConfigured, getAllLeads, deleteLead } = require('./_lib/store');
+const { saveLeadsBulk, isConfigured, getAllLeads, getAllLeadsMap, deleteLead } = require('./_lib/store');
 const { ghlConfigured, fetchQualifyingContacts, fetchCustomFieldMap, collectTagSamples } = require('./_lib/ghl-client');
 
 module.exports = async function handler(req, res) {
@@ -83,28 +83,32 @@ module.exports = async function handler(req, res) {
     }
 
     const { contacts, total } = await fetchQualifyingContacts();
-    let imported = 0;
     let skipped = 0;
 
+    const leads = [];
     for (const contact of contacts) {
       const tags = normalizeTags(contact.tags);
       if (!hasQualifyingTag(tags, contact.source)) {
         skipped++;
         continue;
       }
-      const lead = transformContact(contact, customFieldMap);
-      await saveLead(lead);
-      imported++;
+      leads.push(transformContact(contact, customFieldMap));
     }
 
-    const all = await getAllLeads();
+    // One hgetall + a few chunked hsets instead of 2 Redis commands per lead —
+    // keeps periodic syncs from burning through the KV request quota.
+    const existingMap = await getAllLeadsMap();
+    const { written, unchanged } = await saveLeadsBulk(leads, existingMap);
+
     const response = {
       ok: true,
       fetched: contacts.length,
       totalInGhl: total != null ? total : 'unknown',
-      imported,
+      imported: leads.length,
+      written,
+      unchanged,
       skipped,
-      stored: all.length,
+      stored: new Set([...Object.keys(existingMap), ...leads.map(l => l.id)]).size,
     };
 
     // Always include the distinct tags we saw so tag-name mismatches are obvious.

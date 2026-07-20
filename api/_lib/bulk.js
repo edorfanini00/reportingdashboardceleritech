@@ -13,9 +13,11 @@ async function kvGet(key) {
   if (!_kv) return null;
   try { return await _kv.get(key); } catch { return null; }
 }
+let lastKvError = null;
 async function kvSet(key, value, opts) {
   if (!_kv) return false;
-  try { await _kv.set(key, value, opts); return true; } catch { return false; }
+  try { await _kv.set(key, value, opts); return true; }
+  catch (e) { lastKvError = String((e && e.message) || e); return false; }
 }
 
 const TTL = 3600; // jobs expire after 1h
@@ -115,7 +117,11 @@ async function createBulkJob(spec) {
     errors: [],
     createdAt: Date.now(),
   };
-  await kvSet(`bulk:${job.id}`, job, { ex: TTL });
+  const saved = await kvSet(`bulk:${job.id}`, job, { ex: TTL });
+  if (!saved) {
+    throw new Error('Could not store the bulk job' + (lastKvError ? ` (KV error: ${lastKvError})` : '') +
+      '. The job was NOT queued — nothing will be processed.');
+  }
   return job;
 }
 
