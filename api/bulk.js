@@ -27,6 +27,27 @@ module.exports = async function handler(req, res) {
   try {
     const body = await readBody(req);
 
+    // Temporary diagnostic: report the raw KV error instead of swallowing it.
+    if (body.action === 'kv_probe') {
+      const out = { env: {
+        KV_REST_API_URL: !!process.env.KV_REST_API_URL,
+        KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN,
+        KV_URL: !!process.env.KV_URL,
+        REDIS_URL: !!process.env.REDIS_URL,
+        urlHost: (() => { try { return new URL(process.env.KV_REST_API_URL).host; } catch { return null; } })(),
+      } };
+      try {
+        const { kv } = require('@vercel/kv');
+        await kv.set('probe:diag', { t: Date.now() }, { ex: 60 });
+        out.set = 'ok';
+        out.get = await kv.get('probe:diag');
+      } catch (e) {
+        out.kvError = String((e && e.message) || e);
+      }
+      res.status(200).json({ ok: true, ...out });
+      return;
+    }
+
     if (body.action === 'create') {
       const op = body.op;
       if (!op) {
