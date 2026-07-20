@@ -1322,7 +1322,19 @@ async function postToAgent(text, isAuto) {
     if (hasBulk) await runBulkJob(data.bulkJob);
   } catch (err) {
     removeTyping();
-    addChatBubble('assistant', '⚠️ Could not reach the assistant (' + err.message + '). Make sure the app is deployed with ANTHROPIC_API_KEY set.');
+    // "Failed to fetch" = the connection dropped (flaky network, VPN/proxy
+    // killing a long request, deploy swap). The server may even still be
+    // working. Silently retry as a "continue": the full chat history —
+    // including the question — goes along, so the assistant picks right up.
+    if (autoContinueCount < MAX_AUTO_CONTINUE) {
+      autoContinueCount++;
+      addTyping('Connection hiccup — reconnecting…');
+      await new Promise(r => setTimeout(r, 2000 * autoContinueCount));
+      removeTyping();
+      await postToAgent('continue', true);
+      return;
+    }
+    addChatBubble('assistant', '⚠️ Lost the connection to the assistant several times in a row (' + err.message + '). Check your internet/VPN and send the message again — the conversation is saved.');
   } finally {
     chatBusy = false;
     document.getElementById('chatSendBtn').disabled = false;
