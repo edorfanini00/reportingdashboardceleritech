@@ -1,6 +1,9 @@
-// Endpoint that creates and processes bulk-action jobs in small fast requests.
+// Endpoint for stateless bulk-action jobs. The dashboard holds the job state
+// and drives it in small fast requests: `create` validates and echoes a job
+// spec, `resolve` finds target ids page by page, `process` updates a few
+// contacts per call (slowly, verified per contact). No database required.
 const { ghlConfigured } = require('./_lib/ghl-client');
-const { createBulkJob, processBulkJob, resolveAll, bulkQueuedMessage } = require('./_lib/bulk');
+const { VALID_OPS, MAX_CHUNK, resolveTagPage, processChunk, bulkQueuedMessage } = require('./_lib/bulk');
 
 async function readBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -27,70 +30,58 @@ module.exports = async function handler(req, res) {
   try {
     const body = await readBody(req);
 
-    // Temporary diagnostic: report the raw KV error instead of swallowing it.
-    if (body.action === 'kv_probe') {
-      const out = { env: {
-        KV_REST_API_URL: !!process.env.KV_REST_API_URL,
-        KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN,
-        KV_URL: !!process.env.KV_URL,
-        REDIS_URL: !!process.env.REDIS_URL,
-        urlHost: (() => { try { return new URL(process.env.KV_REST_API_URL).host; } catch { return null; } })(),
-      } };
-      try {
-        const { kv } = require('@vercel/kv');
-        await kv.set('probe:diag', { t: Date.now() }, { ex: 60 });
-        out.set = 'ok';
-        out.get = await kv.get('probe:diag');
-      } catch (e) {
-        out.kvError = String((e && e.message) || e);
+    // Validate and echo a client-held job spec (nothing is stored server-side).
+    if (body.action === 'create') {
+      const op = body.op;
+      if (!VALID_OPS.includes(op)) {
+        res.status(400).json({ ok: false, error: `Unsupported bulk op: ${op || '(missing)'}` });
+        return;
       }
+      const contactIds = Array.isArray(body.contactIds) && body.contactIds.length
+        ? [...new Set(body.contactIds.filter(Boolean))]
+        : null;
+      if (!contactIds && !body.tag) {
+        res.status(400).json({ ok: false, error: 'Provide contactIds or a tag to match.' });
+        return;
+      }
+      const spec = {
+        op,
+        fields: body.fields || null,
+        tags: body.tags || null,
+        tag: body.tag || null,
+        allTags: body.allTags || null,
+        contactIds,
+        total: contactIds ? contactIds.length : null,
+      };
+      res.status(200).json({ ok: true, message: bulkQueuedMessage(spec), bulkJob: spec, total: spec.total });
+      return;
+    }
+
+    // One page of tag-based target resolution.
+    if (body.action === 'resolve') {
+      if (!body.tag) {
+        res.status(400).json({ ok: false, error: 'Missing tag.' });
+        return;
+      }
+      const page = Math.max(1, Number(body.page) || 1);
+      const out = await resolveTagPage(body.tag, page, body.allTags);
       res.status(200).json({ ok: true, ...out });
       return;
     }
 
-    if (body.action === 'create') {
-      const op = body.op;
-      if (!op) {
-        res.status(400).json({ ok: false, error: 'Missing op.' });
-        return;
-      }
-      const job = await createBulkJob({
-        op,
-        fields: body.fields,
-        tags: body.tags,
-        contactIds: body.contactIds,
-        tag: body.tag,
-        allTags: body.allTags,
-      });
-      // Resolve the full target count up front (bounded) so the progress bar
-      // shows a real "0 / N" total immediately instead of "0 / …".
-      let resolved = job;
-      if (!job.resolved) {
-        resolved = (await resolveAll(job.id, 8000)) || job;
-      }
-      res.status(200).json({
-        ok: true,
-        jobId: resolved.id,
-        op: resolved.op,
-        total: resolved.total,
-        message: bulkQueuedMessage(resolved),
-        bulkJob: { id: resolved.id, total: resolved.total, op: resolved.op },
-      });
-      return;
-    }
-
+    // Process a small chunk of contacts, one by one, verified per contact.
     if (body.action === 'process') {
-      if (!body.jobId) {
-        res.status(400).json({ ok: false, error: 'Missing jobId.' });
+      if (!VALID_OPS.includes(body.op)) {
+        res.status(400).json({ ok: false, error: 'Missing or invalid op.' });
         return;
       }
-      const chunk = Math.min(Math.max(1, Number(body.chunk) || 3), 10);
-      const status = await processBulkJob(body.jobId, chunk);
-      if (status.error) {
-        res.status(404).json({ ok: false, error: status.error });
+      const ids = (Array.isArray(body.ids) ? body.ids : []).filter(Boolean).slice(0, MAX_CHUNK);
+      if (!ids.length) {
+        res.status(400).json({ ok: false, error: 'No ids provided.' });
         return;
       }
-      res.status(200).json({ ok: true, ...status });
+      const results = await processChunk(body.op, ids, { fields: body.fields, tags: body.tags });
+      res.status(200).json({ ok: true, results });
       return;
     }
 

@@ -739,7 +739,7 @@ async function runQuickBulk() {
     const raw = await r.text();
     let data; try { data = JSON.parse(raw); } catch { data = null; }
     if (!data || !data.ok) throw new Error((data && data.error) || ('Server error ' + r.status));
-    if (data.bulkJob && data.bulkJob.id) {
+    if (data.bulkJob) {
       await runBulkJob(data.bulkJob);
     } else {
       addChatBubble('assistant', data.message || 'Job queued.');
@@ -844,7 +844,7 @@ async function confirmParsedBulk(btn) {
     const raw = await r.text();
     let data; try { data = JSON.parse(raw); } catch { data = null; }
     if (!data || !data.ok) throw new Error((data && data.error) || ('Server error ' + r.status));
-    if (data.bulkJob && data.bulkJob.id) await runBulkJob(data.bulkJob);
+    if (data.bulkJob) await runBulkJob(data.bulkJob);
     else addChatBubble('assistant', data.message || 'Job queued.');
   } catch (err) {
     addChatBubble('assistant', '⚠️ Could not start bulk job: ' + err.message);
@@ -880,31 +880,27 @@ function capturePendingBulk(actions) {
   }
 }
 
-async function queueBulkDirect(pending) {
-  const body = { action: 'create' };
+// Build the client-held job spec for a confirmed AI bulk action. No server
+// call needed — the job runs via runBulkJob (resolve + verified chunks).
+function queueBulkDirect(pending) {
+  const input = pending.input || {};
+  const ids = Array.isArray(input.contactIds) && input.contactIds.length ? input.contactIds : null;
+  const job = {
+    tag: input.tag || null,
+    allTags: input.allTags || null,
+    contactIds: ids,
+    fields: null,
+    tags: null,
+    total: ids ? ids.length : null,
+  };
   if (pending.tool === 'bulk_update_contacts') {
-    body.op = 'update_contact';
-    body.fields = pending.input.fields;
-    body.tag = pending.input.tag;
-    body.allTags = pending.input.allTags;
-    body.contactIds = pending.input.contactIds;
+    job.op = 'update_contact';
+    job.fields = input.fields;
   } else {
-    body.op = pending.input.mode === 'remove' ? 'remove_tags' : 'add_tags';
-    body.tags = pending.input.tags;
-    body.tag = pending.input.tag;
-    body.allTags = pending.input.allTags;
-    body.contactIds = pending.input.contactIds;
+    job.op = input.mode === 'remove' ? 'remove_tags' : 'add_tags';
+    job.tags = input.tags;
   }
-  const r = await fetch('/api/bulk', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const raw = await r.text();
-  let data;
-  try { data = JSON.parse(raw); } catch { data = null; }
-  if (!data || !data.ok) throw new Error((data && data.error) || 'Could not queue bulk job.');
-  return data;
+  return { ok: true, message: 'Starting now — processing one by one with live progress below.', bulkJob: job };
 }
 let chatId = null;
 let chatBusy = false;
@@ -1103,64 +1099,90 @@ function updateProgressBar(wrap, processed, total, statusText, isError) {
   if (status && statusText) status.textContent = statusText;
 }
 
+async function postBulk(body) {
+  const r = await fetch('/api/bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const raw = await r.text();
+  try { return JSON.parse(raw); } catch { throw new Error('Server error ' + r.status); }
+}
+
+// Runs a client-held bulk job spec: {op, tag, allTags, contactIds, fields, tags}.
+// Phase 1 resolves target ids page by page; phase 2 processes small chunks,
+// one contact at a time server-side (rate-limit safe), verifying every single
+// contact and automatically retrying failures once. No database involved, so
+// this works regardless of KV quota.
 async function runBulkJob(job) {
   const opLabel = BULK_OP_LABEL[job.op] || 'Processing';
-  const bar = addProgressBar(opLabel, job.total);
-  let processed = 0;
-  let total = job.total;
-  let lastErrCount = 0;
-  const CHUNK = 3;
-  const CHUNK_PAUSE_MS = 400; // extra breathing room between server round-trips
+  const bar = addProgressBar(opLabel, job.total != null ? job.total : (job.contactIds ? job.contactIds.length : null));
 
-  while (true) {
-    let d;
-    try {
-      const r = await fetch('/api/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'process', jobId: job.id, chunk: CHUNK }),
-      });
-      const raw = await r.text();
-      try { d = JSON.parse(raw); } catch { d = null; }
-      if (!d || !d.ok) {
-        updateProgressBar(bar, processed, total, (d && d.error) || 'Stopped (server error).', true);
-        return;
+  // Phase 1: resolve target ids.
+  let ids = Array.isArray(job.contactIds) && job.contactIds.length ? [...new Set(job.contactIds)] : null;
+  if (!ids) {
+    if (!job.tag) { updateProgressBar(bar, 0, 0, 'Nothing to do — no tag or contact list given.', true); return; }
+    ids = [];
+    for (let page = 1; page <= 100; page++) {
+      updateProgressBar(bar, 0, null, 'Finding contacts… ' + ids.length + ' found');
+      let d;
+      try { d = await postBulk({ action: 'resolve', tag: job.tag, allTags: job.allTags, page: page }); }
+      catch (err) { updateProgressBar(bar, 0, null, 'Connection lost while finding contacts — ' + err.message, true); return; }
+      if (!d.ok) { updateProgressBar(bar, 0, null, d.error || 'Could not find the matching contacts.', true); return; }
+      ids.push.apply(ids, d.ids || []);
+      if (d.done) break;
+    }
+    ids = [...new Set(ids)];
+  }
+  const total = ids.length;
+  if (!total) { updateProgressBar(bar, 0, 0, 'No matching contacts found.'); return; }
+
+  // Phase 2: process in small chunks; every contact's result is verified.
+  const CHUNK = 5;
+  let processed = 0;
+  async function runPass(list, label) {
+    const failures = [];
+    for (let i = 0; i < list.length; i += CHUNK) {
+      const slice = list.slice(i, i + CHUNK);
+      let d;
+      try { d = await postBulk({ action: 'process', op: job.op, ids: slice, fields: job.fields, tags: job.tags }); }
+      catch (err) {
+        for (const id of slice) failures.push({ id: id, error: 'network: ' + err.message });
+        continue;
       }
-    } catch (err) {
-      updateProgressBar(bar, processed, total, 'Connection lost — ' + err.message, true);
-      return;
-    }
-    processed = d.processed;
-    total = d.total;
-    lastErrCount = d.errorCount || 0;
-    if (d.resolving) {
-      updateProgressBar(bar, processed, total, 'Finding contacts…');
-      await new Promise(r => setTimeout(r, 350));
-      continue;
-    }
-    if (total === 0) {
-      updateProgressBar(bar, 0, 0, 'No matching contacts found.');
-      return;
-    }
-    updateProgressBar(bar, processed, total, 'Processing slowly (rate-limit safe)…' + (lastErrCount ? ' (' + lastErrCount + ' errors)' : ''));
-    if (d.done) {
-      const ok = total - lastErrCount;
-      const msg = lastErrCount
-        ? '✓ Done: ' + ok + ' succeeded, ' + lastErrCount + ' failed.'
-        : '✓ All ' + total + ' done.';
-      updateProgressBar(bar, processed, total, msg, lastErrCount > 0);
-      if (lastErrCount && d.errors && d.errors.length) {
-        const first = d.errors[0];
-        const errMsg = first.error || 'unknown';
-        const is429 = /429|Too Many Requests/i.test(errMsg);
-        const hint = is429
-          ? 'GoHighLevel rate-limited the request (too many API calls in a short window). Wait about a minute and ask the assistant to retry — most contacts may already have been updated.'
-          : 'This usually means a permissions/scope or field-format issue on the GoHighLevel side.';
-        addChatBubble('assistant', '⚠️ Some updates failed. First error: `' + errMsg + '` (contact ' + (first.id || '?') + '). ' + hint);
+      if (!d.ok || !Array.isArray(d.results)) {
+        for (const id of slice) failures.push({ id: id, error: (d && d.error) || 'server error' });
+        continue;
       }
-      return;
+      for (const res of d.results) {
+        if (res.ok) processed++;
+        else failures.push({ id: res.id, error: res.error || 'unknown' });
+      }
+      updateProgressBar(bar, processed, total, label + (failures.length ? ' (' + failures.length + ' will be retried)' : ''));
     }
-    if (CHUNK_PAUSE_MS) await new Promise(r => setTimeout(r, CHUNK_PAUSE_MS));
+    return failures;
+  }
+
+  updateProgressBar(bar, 0, total, 'Processing slowly (rate-limit safe)…');
+  let failures = await runPass(ids, 'Processing slowly (rate-limit safe)…');
+
+  if (failures.length) {
+    updateProgressBar(bar, processed, total, 'Retrying ' + failures.length + ' failed contact(s)…');
+    await new Promise(r => setTimeout(r, 3000)); // let any rate-limit window pass
+    failures = await runPass(failures.map(f => f.id), 'Retrying failed contact(s)…');
+  }
+
+  if (!failures.length) {
+    updateProgressBar(bar, processed, total, '✓ All ' + total + ' done and verified.');
+  } else {
+    updateProgressBar(bar, processed, total, '✓ ' + processed + ' done, ' + failures.length + ' failed after retry.', true);
+    const first = failures[0];
+    const errMsg = first.error || 'unknown';
+    const is429 = /429|Too Many Requests/i.test(errMsg);
+    const hint = is429
+      ? 'GoHighLevel rate-limited some requests. Wait a minute and ask the assistant to retry — completed contacts are already saved.'
+      : 'This usually means a permissions/scope or field-format issue on the GoHighLevel side.';
+    addChatBubble('assistant', '⚠️ ' + failures.length + ' of ' + total + ' updates failed after a retry. First error: `' + errMsg + '` (contact ' + (first.id || '?') + '). ' + hint);
   }
 }
 
@@ -1201,13 +1223,13 @@ async function sendChat(e) {
     const pending = pendingBulkConfirm;
     pendingBulkConfirm = null;
     try {
-      const data = await queueBulkDirect(pending);
+      const data = queueBulkDirect(pending);
       removeTyping();
       const replyMsg = data.message || 'Bulk job queued.';
       addChatBubble('assistant', replyMsg);
       chatHistory.push({ role: 'assistant', content: replyMsg });
       syncChatMemory([{ role: 'user', content: text }, { role: 'assistant', content: replyMsg }]);
-      if (data.bulkJob && data.bulkJob.id && (data.bulkJob.total == null || data.bulkJob.total > 0)) await runBulkJob(data.bulkJob);
+      if (data.bulkJob && (data.bulkJob.total == null || data.bulkJob.total > 0)) await runBulkJob(data.bulkJob);
     } catch (err) {
       removeTyping();
       pendingBulkConfirm = pending;
@@ -1286,7 +1308,7 @@ async function postToAgent(text, isAuto) {
     }
     addActionLog(data.actions);
 
-    const hasBulk = data.bulkJob && data.bulkJob.id && (data.bulkJob.total == null || data.bulkJob.total > 0);
+    const hasBulk = data.bulkJob && (data.bulkJob.total == null || data.bulkJob.total > 0);
 
     // Long-running but not finished: auto-resume without spamming the chat.
     if (data.continuable && !hasBulk && autoContinueCount < MAX_AUTO_CONTINUE) {

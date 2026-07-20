@@ -119,8 +119,9 @@ function formatBulkPreviewReply(toolName, input) {
 }
 
 function bulkJobFromResult(result) {
-  if (!result || !result.bulkJobId || !(result.total == null || result.total > 0)) return null;
-  return { id: result.bulkJobId, total: result.total ?? null, op: result.op };
+  if (!result || !result.ok || !result.bulk || !result.bulkJob) return null;
+  if (!(result.total == null || result.total > 0)) return null;
+  return result.bulkJob;
 }
 
 const AVAILABLE_MODELS = [
@@ -557,7 +558,7 @@ module.exports = async function handler(req, res) {
         console.log('[agent] tool', JSON.stringify({
           name: block.name, ms: Date.now() - t0,
           preview: !!(result && result.preview), error: result && result.error ? String(result.error).slice(0, 160) : undefined,
-          bulkJobId: result && result.bulkJobId, total: result && result.total,
+          bulk: !!(result && result.bulk), total: result && result.total,
           input: JSON.stringify(block.input || {}).slice(0, 200),
         }));
         return { block, result };
@@ -570,9 +571,10 @@ module.exports = async function handler(req, res) {
       for (const { block, result } of executed) {
         const didRun = !(result && result.preview) && !(result && result.error);
         actions.push({ tool: block.name, input: block.input, executed: didRun, preview: !!(result && result.preview) });
-        if (result && result.bulkJobId && (result.total == null || result.total > 0)) {
-          bulkJob = { id: result.bulkJobId, total: result.total ?? null, op: result.op };
-          if (result.ok && result.message) bulkReply = result.message;
+        const jobSpec = bulkJobFromResult(result);
+        if (jobSpec) {
+          bulkJob = jobSpec;
+          if (result.message) bulkReply = result.message;
         }
         if (result && result.preview && BULK_TOOLS.has(block.name)) {
           const input = block.input || result.proposed || {};

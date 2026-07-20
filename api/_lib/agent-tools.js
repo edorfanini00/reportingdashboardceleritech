@@ -4,7 +4,6 @@
 // otherwise they return a preview so the assistant can ask the user to confirm.
 
 const ghl = require('./ghl-client');
-const bulk = require('./bulk');
 
 function contactSummary(c) {
   if (!c) return null;
@@ -272,17 +271,20 @@ const tools = [
       required: ['fields'],
     },
     async run({ fields, contactIds, tag, allTags }) {
-      const job = await bulk.createBulkJob({ op: 'update_contact', fields, contactIds, tag, allTags });
-      const count = job.total == null ? 'the matching' : job.total;
+      const ids = Array.isArray(contactIds) && contactIds.length ? [...new Set(contactIds.filter(Boolean))] : null;
+      const total = ids ? ids.length : null;
+      const count = total == null ? 'the matching' : total;
       return {
         ok: true,
         bulk: true,
-        bulkJobId: job.id,
         op: 'update_contact',
-        total: job.total,
-        message: job.total === 0
+        total,
+        // Job spec held by the dashboard, which resolves targets and processes
+        // them one by one with per-contact verification — no database needed.
+        bulkJob: { op: 'update_contact', fields: fields || null, tags: null, tag: tag || null, allTags: allTags || null, contactIds: ids, total },
+        message: total === 0
           ? 'No matching contacts found, nothing to update.'
-          : `Queued an update for ${count} contacts. The dashboard is now processing them automatically and showing live progress — no need to verify each one.`,
+          : `Queued an update for ${count} contacts. The dashboard is now processing them one by one (verified) with live progress below.`,
       };
     },
   },
@@ -304,17 +306,18 @@ const tools = [
     },
     async run({ mode, tags, contactIds, tag, allTags }) {
       const op = mode === 'remove' ? 'remove_tags' : 'add_tags';
-      const job = await bulk.createBulkJob({ op, tags, contactIds, tag, allTags });
-      const count = job.total == null ? 'the matching' : job.total;
+      const ids = Array.isArray(contactIds) && contactIds.length ? [...new Set(contactIds.filter(Boolean))] : null;
+      const total = ids ? ids.length : null;
+      const count = total == null ? 'the matching' : total;
       return {
         ok: true,
         bulk: true,
-        bulkJobId: job.id,
         op,
-        total: job.total,
-        message: job.total === 0
+        total,
+        bulkJob: { op, fields: null, tags: tags || null, tag: tag || null, allTags: allTags || null, contactIds: ids, total },
+        message: total === 0
           ? 'No matching contacts found, nothing to change.'
-          : `Queued ${mode === 'remove' ? 'removal' : 'addition'} of tag(s) on ${count} contacts. The dashboard is now processing them automatically and showing live progress.`,
+          : `Queued ${mode === 'remove' ? 'removal' : 'addition'} of tag(s) on ${count} contacts. The dashboard is now processing them one by one (verified) with live progress.`,
       };
     },
   },
