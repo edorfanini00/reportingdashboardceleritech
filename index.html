@@ -259,12 +259,11 @@ ACTIVE PIPELINE
 </div>
 <p class="text-[10px] text-slate-400 font-medium mb-4">From the GoHighLevel Status field &mdash; click a row to see the contacts</p>
 <div id="callOutcomes" class="space-y-2.5"></div>
-<div id="reasonBreakdown"></div>
 </div>
 <div class="glass-card p-4 md:p-6">
-<h4 class="text-sm md:text-base font-bold text-slate-800 mb-1">Reply Sentiment</h4>
-<p class="text-[10px] text-slate-400 font-medium mb-4">Positive vs negative replies from outreach</p>
-<div id="replySentiment" class="space-y-2.5"></div>
+<h4 class="text-sm md:text-base font-bold text-slate-800 mb-1">Reason</h4>
+<p class="text-[10px] text-slate-400 font-medium mb-4">From the GoHighLevel Reason field &mdash; click a row to see the contacts</p>
+<div id="reasonCard" class="space-y-2.5"></div>
 </div>
 </div>
 <div class="glass-card p-4 md:p-6">
@@ -560,6 +559,36 @@ function canonicalStatusOf(l) {
     return 'Other';
 }
 
+// The official Reason options used in GoHighLevel (NI = Not Interested,
+// AB = Abandon). Contacts with an unrecognized Reason fall into "Unrecognized".
+const CANONICAL_REASONS = [
+    'NI \u2013 Existing Contract',
+    'NI \u2013 Selected Another Solution',
+    'NI \u2013 Not a Business Fit',
+    'NI \u2013 No Budget',
+    'AB \u2013 Job Seeker',
+    'AB \u2013 Partner Inquiry',
+    'AB \u2013 Duplicate Record',
+    'AB \u2013 Invalid Contact Information',
+    'AB \u2013 Other',
+];
+function canonicalReasonOf(l) {
+    const raw = String(l.reason || '').trim();
+    if (!raw) return '';
+    // Normalize dash styles ("NI - No Budget" vs "NI – No Budget") and spacing.
+    const s = raw.toLowerCase().replace(/[\u2013\u2014]/g, '-').replace(/\s+/g, ' ');
+    if (s.includes('existing contract')) return 'NI \u2013 Existing Contract';
+    if (s.includes('another solution') || s.includes('selected another')) return 'NI \u2013 Selected Another Solution';
+    if (s.includes('business fit') || s.includes('not a fit')) return 'NI \u2013 Not a Business Fit';
+    if (s.includes('budget')) return 'NI \u2013 No Budget';
+    if (s.includes('job seeker') || s.includes('jobseeker')) return 'AB \u2013 Job Seeker';
+    if (s.includes('partner')) return 'AB \u2013 Partner Inquiry';
+    if (s.includes('duplicate')) return 'AB \u2013 Duplicate Record';
+    if (s.includes('invalid')) return 'AB \u2013 Invalid Contact Information';
+    if (s.replace(/[^a-z ]/g, '').trim().startsWith('ab') && s.includes('other')) return 'AB \u2013 Other';
+    return 'Unrecognized';
+}
+
 // Shared contact-list modal (used by funnel stats, Status rows, Reason rows).
 function renderContactListModal(title, list, accent) {
     document.getElementById('funnelModalTitle').innerText = title;
@@ -609,10 +638,11 @@ function showStatusLeads(encoded) {
     renderContactListModal('Status: ' + bucket, leads, 'orange');
 }
 
-// Contacts behind a Reason row (selected date range).
+// Contacts behind a Reason bucket (selected date range). Contact cards still
+// show each setter's verbatim reason wording.
 function showReasonLeads(encoded) {
     const label = decodeURIComponent(encoded);
-    const leads = ((currentViewData && currentViewData.leads) || []).filter(l => String(l.reason || '').trim() === label);
+    const leads = ((currentViewData && currentViewData.leads) || []).filter(l => canonicalReasonOf(l) === label);
     renderContactListModal('Reason: ' + label, leads, 'purple');
 }
 
@@ -1943,15 +1973,12 @@ function renderAnalytics(data) {
         }
     });
 
-    // --- Status (verbatim GHL Status field) + reply sentiment ---
+    // --- Status + Reason (GHL fields) ---
     const tagsOf = (l) => (l.tags || []).map(t => String(t).toLowerCase());
     let cBooked = 0;
-    let rPos = 0, rNeg = 0;
     leads.forEach(l => {
         const ts = tagsOf(l);
         const has = (s) => ts.some(t => t.includes(s));
-        if (has('positive reply')) rPos++;
-        else if (has('negative reply')) rNeg++;
         if (l.meetingBooked || String(l.callStatus || '').toLowerCase() === 'booked' || has('meeting booked')) cBooked++;
     });
 
@@ -1994,37 +2021,37 @@ function renderAnalytics(data) {
             outcomeRow(label, statusGroups[label] || 0, CANONICAL_STATUS_COLORS[label] || '#94a3b8', "showStatusLeads('" + encodeURIComponent(label) + "')")
         ).join('');
     }
-    // Contacts that carry the GHL "Reason" field, grouped by its exact text.
-    const reasonEl = document.getElementById('reasonBreakdown');
-    if (reasonEl) {
-        const reasonGroups = {};
-        leads.forEach(l => {
-            const r = String(l.reason || '').trim();
-            if (r) reasonGroups[r] = (reasonGroups[r] || 0) + 1;
-        });
-        const rEntries = Object.entries(reasonGroups).sort((a, b) => b[1] - a[1]);
-        reasonEl.innerHTML = !rEntries.length ? '' :
-            '<div class="flex items-center gap-2 mt-5 mb-3">'
-            + '<p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Reason (from GoHighLevel)</p>'
-            + '<div class="flex-1 h-px bg-slate-200/70"></div>'
-            + '</div>'
-            + '<div class="space-y-2.5">'
-            + rEntries.map(([label, count], i) =>
-                outcomeRow(label, count, STATUS_COLORS[(i + 3) % STATUS_COLORS.length], "showReasonLeads('" + encodeURIComponent(label) + "')")
-              ).join('')
-            + '</div>';
-    }
     const badge = document.getElementById('bookedRateBadge');
     if (badge) badge.textContent = (total ? (cBooked / total * 100).toFixed(1) : '0') + '% booked';
-    const replyEl = document.getElementById('replySentiment');
-    if (replyEl) {
-        const rNone = total - rPos - rNeg;
-        const replied = rPos + rNeg;
-        replyEl.innerHTML =
-            outcomeRow('Positive Reply', rPos, '#10b981')
-            + outcomeRow('Negative Reply', rNeg, '#ef4444')
-            + outcomeRow('No Reply Yet', rNone, '#cbd5e1')
-            + '<p class="text-[10px] text-slate-400 font-semibold pt-1">' + (replied ? ('Reply rate: ' + (replied / total * 100).toFixed(1) + '% · ' + Math.round(rPos / replied * 100) + '% of replies are positive') : 'No replies tracked in this range yet') + '</p>';
+    // Bucket contacts with a GHL "Reason" into the official Reason options.
+    const reasonEl = document.getElementById('reasonCard');
+    if (reasonEl) {
+        const reasonGroups = {};
+        let withReason = 0;
+        leads.forEach(l => {
+            const bucket = canonicalReasonOf(l);
+            if (!bucket) return;
+            withReason++;
+            reasonGroups[bucket] = (reasonGroups[bucket] || 0) + 1;
+        });
+        const REASON_COLORS = {
+            'NI \u2013 Existing Contract': '#ef4444',
+            'NI \u2013 Selected Another Solution': '#f97316',
+            'NI \u2013 Not a Business Fit': '#f59e0b',
+            'NI \u2013 No Budget': '#ec4899',
+            'AB \u2013 Job Seeker': '#8b5cf6',
+            'AB \u2013 Partner Inquiry': '#6366f1',
+            'AB \u2013 Duplicate Record': '#0ea5e9',
+            'AB \u2013 Invalid Contact Information': '#14b8a6',
+            'AB \u2013 Other': '#84cc16',
+            'Unrecognized': '#94a3b8',
+        };
+        const order = [...CANONICAL_REASONS];
+        if (reasonGroups['Unrecognized']) order.push('Unrecognized');
+        reasonEl.innerHTML = order.map(label =>
+            outcomeRow(label, reasonGroups[label] || 0, REASON_COLORS[label] || '#94a3b8', "showReasonLeads('" + encodeURIComponent(label) + "')")
+        ).join('')
+        + '<p class="text-[10px] text-slate-400 font-semibold pt-1">' + withReason + ' of ' + total + ' contacts have a Reason set</p>';
     }
 
     // --- Heatmap (day x 3h block, timed leads only) ---
