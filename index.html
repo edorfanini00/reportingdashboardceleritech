@@ -257,7 +257,7 @@ ACTIVE PIPELINE
 <h4 class="text-sm md:text-base font-bold text-slate-800">Status</h4>
 <span class="text-[9px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-lg uppercase tracking-wider" id="bookedRateBadge">0% booked</span>
 </div>
-<p class="text-[10px] text-slate-400 font-medium mb-4">The GoHighLevel Status field, exactly as written &mdash; click a row to see the contacts</p>
+<p class="text-[10px] text-slate-400 font-medium mb-4">From the GoHighLevel Status field &mdash; click a row to see the contacts</p>
 <div id="callOutcomes" class="space-y-2.5"></div>
 <div id="reasonBreakdown"></div>
 </div>
@@ -542,6 +542,24 @@ function statusKeyOf(l) {
     return 'No Status Yet';
 }
 
+// The official status options used in GoHighLevel. Every imported contact is
+// bucketed into one of these; unrecognized legacy values fall into "Other".
+const CANONICAL_STATUSES = ['New', 'Call Back (13 days)', 'Interested', 'Booked', 'Prospect', 'SQL', 'Abandon', 'Not Interested'];
+function canonicalStatusOf(l) {
+    const raw = statusKeyOf(l);
+    if (raw === 'No Status Yet') return 'No Status Yet';
+    const s = raw.toLowerCase();
+    if (l.meetingBooked || s.includes('book')) return 'Booked';
+    if (s.includes('not interested') || s.includes('not qualified') || s.includes('unqualified') || s.includes('disqualified')) return 'Not Interested';
+    if (s.includes('call back') || s.includes('callback')) return 'Call Back (13 days)';
+    if (s.includes('interes')) return 'Interested'; // interested / interesado
+    if (s.includes('prospect')) return 'Prospect';
+    if (s.includes('sql')) return 'SQL';
+    if (s.includes('abandon')) return 'Abandon';
+    if (s.includes('new')) return 'New';
+    return 'Other';
+}
+
 // Shared contact-list modal (used by funnel stats, Status rows, Reason rows).
 function renderContactListModal(title, list, accent) {
     document.getElementById('funnelModalTitle').innerText = title;
@@ -583,12 +601,12 @@ function showFunnelLeads(type) {
     renderContactListModal(title + ' — All Time', allLeads, accent);
 }
 
-// Contacts behind a Status row (selected date range, case-insensitive match).
+// Contacts behind a Status bucket (selected date range). Contact cards still
+// show each setter's verbatim status wording.
 function showStatusLeads(encoded) {
-    const lc = decodeURIComponent(encoded);
-    const leads = ((currentViewData && currentViewData.leads) || []).filter(l => statusKeyOf(l).toLowerCase() === lc);
-    const label = leads.length ? statusKeyOf(leads[0]) : lc;
-    renderContactListModal('Status: ' + label, leads, 'orange');
+    const bucket = decodeURIComponent(encoded);
+    const leads = ((currentViewData && currentViewData.leads) || []).filter(l => canonicalStatusOf(l) === bucket);
+    renderContactListModal('Status: ' + bucket, leads, 'orange');
 }
 
 // Contacts behind a Reason row (selected date range).
@@ -1937,25 +1955,24 @@ function renderAnalytics(data) {
         if (l.meetingBooked || String(l.callStatus || '').toLowerCase() === 'booked' || has('meeting booked')) cBooked++;
     });
 
-    // Group by the setter's status wording as typed in GoHighLevel, merging
-    // trivial case differences ("Not Interested" vs "not interested") while
-    // displaying the most common spelling. No Status falls into "No Status Yet".
+    // Bucket every contact into the official GHL status options.
     const statusGroups = {};
     leads.forEach(l => {
-        const key = statusKeyOf(l);
-        const lc = key.toLowerCase();
-        if (!statusGroups[lc]) statusGroups[lc] = { count: 0, variants: {} };
-        statusGroups[lc].count++;
-        statusGroups[lc].variants[key] = (statusGroups[lc].variants[key] || 0) + 1;
+        const key = canonicalStatusOf(l);
+        statusGroups[key] = (statusGroups[key] || 0) + 1;
     });
     const STATUS_COLORS = ['#10b981', '#f59e0b', '#0ea5e9', '#8b5cf6', '#ef4444', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
-    const statusColor = (label, i) => {
-        const s = label.toLowerCase();
-        if (s.includes('book')) return '#10b981';
-        if (s.includes('not interested') || s.includes('remove')) return '#ef4444';
-        if (s.includes('no answer')) return '#94a3b8';
-        if (s === 'no status yet') return '#cbd5e1';
-        return STATUS_COLORS[i % STATUS_COLORS.length];
+    const CANONICAL_STATUS_COLORS = {
+        'New': '#0ea5e9',
+        'Call Back (13 days)': '#f59e0b',
+        'Interested': '#8b5cf6',
+        'Booked': '#10b981',
+        'Prospect': '#14b8a6',
+        'SQL': '#6366f1',
+        'Abandon': '#f97316',
+        'Not Interested': '#ef4444',
+        'Other': '#ec4899',
+        'No Status Yet': '#cbd5e1',
     };
     const outcomeRow = (label, count, color, onclick) => {
         const pct = total ? (count / total * 100) : 0;
@@ -1969,16 +1986,13 @@ function renderAnalytics(data) {
     };
     const outcomesEl = document.getElementById('callOutcomes');
     if (outcomesEl) {
-        const entries = Object.entries(statusGroups).sort((a, b) => {
-            if (a[0] === 'no status yet') return 1;
-            if (b[0] === 'no status yet') return -1;
-            return b[1].count - a[1].count;
-        });
-        outcomesEl.innerHTML = entries.map(([lc, g], i) => {
-            // Display the most frequent spelling among the case variants.
-            const label = Object.entries(g.variants).sort((a, b) => b[1] - a[1])[0][0];
-            return outcomeRow(label, g.count, statusColor(label, i), "showStatusLeads('" + encodeURIComponent(lc) + "')");
-        }).join('');
+        // Fixed order: the official options first, then Other / No Status Yet.
+        const order = [...CANONICAL_STATUSES];
+        if (statusGroups['Other']) order.push('Other');
+        if (statusGroups['No Status Yet']) order.push('No Status Yet');
+        outcomesEl.innerHTML = order.map(label =>
+            outcomeRow(label, statusGroups[label] || 0, CANONICAL_STATUS_COLORS[label] || '#94a3b8', "showStatusLeads('" + encodeURIComponent(label) + "')")
+        ).join('');
     }
     // Contacts that carry the GHL "Reason" field, grouped by its exact text.
     const reasonEl = document.getElementById('reasonBreakdown');
