@@ -871,13 +871,12 @@ function syncChatMemory(turns) {
 
 function capturePendingBulk(actions) {
   if (!actions || !actions.length) return;
-  for (let i = actions.length - 1; i >= 0; i--) {
-    const a = actions[i];
-    if (a.preview && (a.tool === 'bulk_update_contacts' || a.tool === 'bulk_tag_contacts') && a.input) {
-      pendingBulkConfirm = { tool: a.tool, input: a.input };
-      return;
-    }
-  }
+  // Capture ALL previewed bulk actions — the model may propose several jobs
+  // in one turn (e.g. standardizing many source values). Confirming runs all.
+  const found = actions
+    .filter(a => a.preview && (a.tool === 'bulk_update_contacts' || a.tool === 'bulk_tag_contacts') && a.input)
+    .map(a => ({ tool: a.tool, input: a.input }));
+  if (found.length) pendingBulkConfirm = found;
 }
 
 // Build the client-held job spec for a confirmed AI bulk action. No server
@@ -1225,19 +1224,22 @@ async function sendChat(e) {
     chatHistory.push({ role: 'user', content: text });
     renderSuggestions();
     addTyping();
-    const pending = pendingBulkConfirm;
+    const pendingList = Array.isArray(pendingBulkConfirm) ? pendingBulkConfirm : [pendingBulkConfirm];
     pendingBulkConfirm = null;
     try {
-      const data = queueBulkDirect(pending);
       removeTyping();
-      const replyMsg = data.message || 'Bulk job queued.';
+      const replyMsg = pendingList.length > 1
+        ? 'Starting ' + pendingList.length + ' bulk jobs — running them one after another below.'
+        : 'Starting now — processing one by one with live progress below.';
       addChatBubble('assistant', replyMsg);
       chatHistory.push({ role: 'assistant', content: replyMsg });
       syncChatMemory([{ role: 'user', content: text }, { role: 'assistant', content: replyMsg }]);
-      if (data.bulkJob && (data.bulkJob.total == null || data.bulkJob.total > 0)) await runBulkJob(data.bulkJob);
+      for (const pending of pendingList) {
+        const data = queueBulkDirect(pending);
+        if (data.bulkJob && (data.bulkJob.total == null || data.bulkJob.total > 0)) await runBulkJob(data.bulkJob);
+      }
     } catch (err) {
       removeTyping();
-      pendingBulkConfirm = pending;
       addChatBubble('assistant', '⚠️ Could not start bulk job: ' + err.message);
     } finally {
       chatBusy = false;
@@ -1315,7 +1317,9 @@ async function postToAgent(text, isAuto) {
     }
     addActionLog(data.actions);
 
-    const hasBulk = data.bulkJob && (data.bulkJob.total == null || data.bulkJob.total > 0);
+    const bulkJobList = (Array.isArray(data.bulkJobs) && data.bulkJobs.length ? data.bulkJobs : (data.bulkJob ? [data.bulkJob] : []))
+      .filter(j => j && (j.total == null || j.total > 0));
+    const hasBulk = bulkJobList.length > 0;
 
     // Long-running but not finished: auto-resume without spamming the chat,
     // echoing the server's conversation state back on the next request.
@@ -1329,7 +1333,7 @@ async function postToAgent(text, isAuto) {
     pendingChatState = null;
     addChatBubble('assistant', data.reply);
     chatHistory.push({ role: 'assistant', content: data.reply });
-    if (hasBulk) await runBulkJob(data.bulkJob);
+    for (const job of bulkJobList) await runBulkJob(job);
   } catch (err) {
     removeTyping();
     // "Failed to fetch" = the connection dropped (flaky network, VPN/proxy

@@ -105,17 +105,25 @@ function isConfirmMessage(text) {
   return CONFIRM_RE.test(String(text || '').trim());
 }
 
-function formatBulkPreviewReply(toolName, input) {
+function describeBulkAction(toolName, input) {
   const target = input.tag
     ? `all contacts with tag "${input.tag}"`
     : `${(input.contactIds || []).length} contact(s)`;
   if (toolName === 'bulk_update_contacts') {
     const fields = input.fields ? JSON.stringify(input.fields) : 'fields';
-    return `Ready to update ${target} → ${fields}.\n\nReply **yes** to start processing.`;
+    return `update ${target} → ${fields}`;
   }
   const mode = input.mode === 'remove' ? 'remove' : 'add';
   const tags = Array.isArray(input.tags) ? input.tags.join(', ') : String(input.tags || '');
-  return `Ready to ${mode} tag(s) "${tags}" on ${target}.\n\nReply **yes** to start processing.`;
+  return `${mode} tag(s) "${tags}" on ${target}`;
+}
+
+function formatBulkPreviewReply(previews) {
+  if (previews.length === 1) {
+    return `Ready to ${describeBulkAction(previews[0].tool, previews[0].input)}.\n\nReply **yes** to start processing.`;
+  }
+  const lines = previews.map((p, i) => `${i + 1}. ${describeBulkAction(p.tool, p.input)}`);
+  return `Ready to run ${previews.length} bulk jobs:\n${lines.join('\n')}\n\nReply **yes** to start ALL of them.`;
 }
 
 function bulkJobFromResult(result) {
@@ -381,7 +389,8 @@ module.exports = async function handler(req, res) {
     const preferredModel = body.model || DEFAULT_MODEL;
     const actions = [];
     let usedModel = preferredModel;
-    let bulkJob = null;
+    let bulkJob = null;       // first job (kept for older clients)
+    let bulkJobs = [];        // ALL jobs queued this turn — the client runs each
 
     // Record turns that happened outside this endpoint (e.g. the client's
     // local bulk-confirm flow) so the assistant's memory stays in sync.
@@ -457,28 +466,43 @@ module.exports = async function handler(req, res) {
         model: usedModel,
         fallback: usedModel !== preferredModel,
         bulkJob,
+        bulkJobs: bulkJobs.length ? bulkJobs : undefined,
         continuable: !bulkJob,
         state: bulkJob ? undefined : messages,
       });
     }, FUNCTION_BUDGET_MS);
 
-    // Confirming a bulk action — skip Claude entirely (avoids serverless timeout).
+    // Confirming pending bulk action(s) — skip Claude entirely (fast path).
     if (!isContinue && isConfirmMessage(body.message)) {
       const pending = await kvGet(`pending:${chatId}`);
-      if (pending && BULK_TOOLS.has(pending.tool)) {
-        const result = await runTool(pending.tool, { ...pending.input, confirmed: true });
+      const pendingList = pending && Array.isArray(pending.list)
+        ? pending.list.filter(p => p && BULK_TOOLS.has(p.tool))
+        : (pending && BULK_TOOLS.has(pending.tool) ? [pending] : []);
+      if (pendingList.length) {
+        const confirmActions = [];
+        const msgs = [];
+        for (const p of pendingList) {
+          const result = await runTool(p.tool, { ...p.input, confirmed: true });
+          const jobSpec = bulkJobFromResult(result);
+          if (jobSpec) bulkJobs.push(jobSpec);
+          if (result && result.message) msgs.push(result.message);
+          confirmActions.push({ tool: p.tool, input: p.input, executed: !!(result && result.ok), preview: false });
+        }
         await kvDel(`pending:${chatId}`);
-        const reply = (result && result.message) || 'Bulk job queued.';
-        bulkJob = bulkJobFromResult(result);
+        bulkJob = bulkJobs[0] || null;
+        const reply = bulkJobs.length > 1
+          ? `Queued ${bulkJobs.length} bulk jobs — the dashboard is processing them one after another below.`
+          : (msgs[0] || 'Bulk job queued.');
         messages.push({ role: 'assistant', content: reply });
         await kvSet(kvKey, capStoredMessages(messages), { ex: KV_TTL });
         sendJson(200, {
           ok: true,
           reply,
-          actions: [{ tool: pending.tool, input: pending.input, executed: !!(result && result.ok), preview: false }],
+          actions: confirmActions,
           chatId,
           model: preferredModel,
           bulkJob,
+          bulkJobs: bulkJobs.length ? bulkJobs : undefined,
         });
         return;
       }
@@ -505,6 +529,7 @@ module.exports = async function handler(req, res) {
         model: usedModel,
         fallback: usedModel !== preferredModel,
         bulkJob,
+        bulkJobs: bulkJobs.length ? bulkJobs : undefined,
         continuable: !bulkJob,
         // Exact conversation state for the client to echo back on continue —
         // resuming works even with no server-side storage at all.
@@ -558,6 +583,7 @@ module.exports = async function handler(req, res) {
           model: usedModel,
           fallback: usedModel !== preferredModel,
           bulkJob,
+          bulkJobs: bulkJobs.length ? bulkJobs : undefined,
         });
         return;
       }
@@ -580,21 +606,18 @@ module.exports = async function handler(req, res) {
       if (sent) return;
       const toolResults = [];
       let bulkReply = null;
-      let pendingBulkPreview = null;
+      const bulkPreviews = [];
       for (const { block, result } of executed) {
         const didRun = !(result && result.preview) && !(result && result.error);
         actions.push({ tool: block.name, input: block.input, executed: didRun, preview: !!(result && result.preview) });
         const jobSpec = bulkJobFromResult(result);
         if (jobSpec) {
-          bulkJob = jobSpec;
+          bulkJobs.push(jobSpec);
+          bulkJob = bulkJobs[0];
           if (result.message) bulkReply = result.message;
         }
         if (result && result.preview && BULK_TOOLS.has(block.name)) {
-          const input = block.input || result.proposed || {};
-          pendingBulkPreview = { tool: block.name, input, reply: formatBulkPreviewReply(block.name, input) };
-          // Pending bulk confirmations stay short-lived on purpose: confirming
-          // a week-old "yes" against live CRM data would be dangerous.
-          await kvSet(`pending:${chatId}`, { tool: block.name, input }, { ex: 3600 });
+          bulkPreviews.push({ tool: block.name, input: block.input || result.proposed || {} });
         }
         toolResults.push({
           type: 'tool_result',
@@ -604,11 +627,14 @@ module.exports = async function handler(req, res) {
       }
       messages.push({ role: 'user', content: toolResults });
 
-      if (pendingBulkPreview) {
+      if (bulkPreviews.length) {
+        // Pending bulk confirmations stay short-lived on purpose: confirming
+        // a week-old "yes" against live CRM data would be dangerous.
+        await kvSet(`pending:${chatId}`, { list: bulkPreviews }, { ex: 3600 });
         await kvSet(kvKey, capStoredMessages(messages), { ex: KV_TTL });
         sendJson(200, {
           ok: true,
-          reply: pendingBulkPreview.reply,
+          reply: formatBulkPreviewReply(bulkPreviews),
           actions,
           chatId,
           model: usedModel,
@@ -617,18 +643,21 @@ module.exports = async function handler(req, res) {
         return;
       }
 
-      // Bulk job queued — return immediately so the client can run /api/bulk
-      // without waiting for another Claude round-trip (which often hits 504).
-      if (bulkJob && bulkReply) {
+      // Bulk job(s) queued — return immediately so the client can run them
+      // without waiting for another model round-trip.
+      if (bulkJobs.length && bulkReply) {
         await kvSet(kvKey, capStoredMessages(messages), { ex: KV_TTL });
         sendJson(200, {
           ok: true,
-          reply: bulkReply,
+          reply: bulkJobs.length > 1
+            ? `Queued ${bulkJobs.length} bulk jobs — the dashboard is processing them one after another below.`
+            : bulkReply,
           actions,
           chatId,
           model: usedModel,
           fallback: usedModel !== preferredModel,
           bulkJob,
+          bulkJobs,
         });
         return;
       }
