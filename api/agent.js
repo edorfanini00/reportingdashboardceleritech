@@ -213,15 +213,18 @@ function toAnthropicMessages(history) {
     .map(m => ({ role: m.role, content: m.content }));
 }
 
-const CLAUDE_CALL_TIMEOUT_MS = 30000;
-// Total wall-clock budget for the whole request. Must stay safely under
-// Vercel's 60s hard maxDuration so we always return parseable JSON instead of
-// an HTML 504 page (which the client can only show as a generic timeout).
-const FUNCTION_BUDGET_MS = 55000;
+const CLAUDE_CALL_TIMEOUT_MS = 25000;
+// Total wall-clock budget for ONE HTTP request. Deliberately short: many
+// networks (VPNs, proxies, mobile hotspots) silently kill HTTP requests that
+// stay open longer than ~30s, which surfaces as "Failed to fetch" in the
+// browser. Long turns instead chain across several short requests: the server
+// returns `continuable` with the conversation state and the client resumes
+// immediately. Must also stay under Vercel's 60s hard maxDuration.
+const FUNCTION_BUDGET_MS = 28000;
 // Buffer reserved after a model call for tool execution + writing the response.
-const RESPONSE_BUFFER_MS = 3000;
+const RESPONSE_BUFFER_MS = 2000;
 // Don't even start another model round-trip unless this much budget remains.
-const MIN_STEP_BUDGET_MS = 10000;
+const MIN_STEP_BUDGET_MS = 8000;
 
 async function callClaude(apiKey, messages, model, timeoutMs = CLAUDE_CALL_TIMEOUT_MS) {
   const ctrl = new AbortController();
@@ -395,11 +398,17 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    // Load existing conversation from KV, or start fresh. If KV lost the
-    // conversation (expired, size limit, transient failure) fall back to the
-    // client-supplied history so the assistant never suddenly forgets the chat.
+    // Load the conversation. Preference order:
+    // 1. `state` echoed back by the client on a continue — the exact message
+    //    array (incl. tool calls) from the previous partial response. Works
+    //    with zero server-side storage.
+    // 2. KV-stored conversation.
+    // 3. Client-supplied plain-text history (fallback if KV lost the chat).
     let messages = [];
-    if (body.chatId) {
+    if (Array.isArray(body.state) && body.state.length) {
+      messages = body.state.filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content != null);
+    }
+    if (!messages.length && body.chatId) {
       const stored = await kvGet(kvKey);
       if (Array.isArray(stored)) messages = stored;
     }
@@ -449,6 +458,7 @@ module.exports = async function handler(req, res) {
         fallback: usedModel !== preferredModel,
         bulkJob,
         continuable: !bulkJob,
+        state: bulkJob ? undefined : messages,
       });
     }, FUNCTION_BUDGET_MS);
 
@@ -496,6 +506,9 @@ module.exports = async function handler(req, res) {
         fallback: usedModel !== preferredModel,
         bulkJob,
         continuable: !bulkJob,
+        // Exact conversation state for the client to echo back on continue —
+        // resuming works even with no server-side storage at all.
+        state: bulkJob ? undefined : messages,
       });
     };
 

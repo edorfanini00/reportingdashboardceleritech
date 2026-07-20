@@ -1189,8 +1189,13 @@ async function runBulkJob(job) {
 function autoGrow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 128) + 'px'; }
 function chatKeydown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(e); } }
 
-const MAX_AUTO_CONTINUE = 3;
+// Long turns run as a chain of SHORT requests (each under ~30s so networks
+// that kill long-lived connections can't break them). The server returns its
+// exact conversation state with each partial response; we echo it back on the
+// next `continue`, so resuming needs no server-side storage.
+const MAX_AUTO_CONTINUE = 8;
 let autoContinueCount = 0;
+let pendingChatState = null;
 
 async function sendChat(e) {
   if (e) e.preventDefault();
@@ -1243,6 +1248,7 @@ async function sendChat(e) {
   }
 
   autoContinueCount = 0; // fresh user turn
+  pendingChatState = null;
   await postToAgent(text, false);
   return false;
 }
@@ -1269,6 +1275,7 @@ async function postToAgent(text, isAuto) {
     const payload = isAuto
       ? { continue: true, model: selectedModel }
       : { message: text, model: selectedModel };
+    if (isAuto && pendingChatState) payload.state = pendingChatState;
     if (priorHistory.length) payload.history = priorHistory;
     if (chatId) payload.chatId = chatId;
     const r = await fetch('/api/agent', {
@@ -1310,13 +1317,16 @@ async function postToAgent(text, isAuto) {
 
     const hasBulk = data.bulkJob && (data.bulkJob.total == null || data.bulkJob.total > 0);
 
-    // Long-running but not finished: auto-resume without spamming the chat.
+    // Long-running but not finished: auto-resume without spamming the chat,
+    // echoing the server's conversation state back on the next request.
     if (data.continuable && !hasBulk && autoContinueCount < MAX_AUTO_CONTINUE) {
       autoContinueCount++;
+      if (Array.isArray(data.state) && data.state.length) pendingChatState = data.state;
       await postToAgent('continue', true);
       return;
     }
 
+    pendingChatState = null;
     addChatBubble('assistant', data.reply);
     chatHistory.push({ role: 'assistant', content: data.reply });
     if (hasBulk) await runBulkJob(data.bulkJob);
@@ -1334,7 +1344,15 @@ async function postToAgent(text, isAuto) {
       await postToAgent('continue', true);
       return;
     }
-    addChatBubble('assistant', '⚠️ Lost the connection to the assistant several times in a row (' + err.message + '). Check your internet/VPN and send the message again — the conversation is saved.');
+    // Quick diagnostic: can we reach the API at all with a tiny fast call?
+    let apiReachable = false;
+    try {
+      const t = await fetch('/api/agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'list_models' }) });
+      apiReachable = t.ok;
+    } catch { /* unreachable */ }
+    addChatBubble('assistant', apiReachable
+      ? '⚠️ The server is reachable, but your connection keeps dropping mid-request. Send the message again — the conversation is saved.'
+      : '⚠️ Your browser cannot reach the server at all right now (' + err.message + '). Check your internet connection, VPN, or ad-blocker for this site, then send the message again — the conversation is saved.');
   } finally {
     chatBusy = false;
     document.getElementById('chatSendBtn').disabled = false;
