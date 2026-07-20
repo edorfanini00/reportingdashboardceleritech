@@ -83,21 +83,29 @@ module.exports = async function handler(req, res) {
     }
 
     const { contacts, total } = await fetchQualifyingContacts();
-    let skipped = 0;
-
-    const leads = [];
-    for (const contact of contacts) {
-      const tags = normalizeTags(contact.tags);
-      if (!hasQualifyingTag(tags, contact.source)) {
-        skipped++;
-        continue;
-      }
-      leads.push(transformContact(contact, customFieldMap));
-    }
 
     // One hgetall + a few chunked hsets instead of 2 Redis commands per lead —
     // keeps periodic syncs from burning through the KV request quota.
     const existingMap = await getAllLeadsMap();
+
+    let skipped = 0;
+    let refreshedStored = 0;
+    const leads = [];
+    for (const contact of contacts) {
+      const tags = normalizeTags(contact.tags);
+      const qualifies = hasQualifyingTag(tags, contact.source);
+      // Contacts already on the dashboard must keep getting their live GHL
+      // data (Status, Reason, tags) refreshed even if they no longer pass the
+      // import filter — otherwise their stored copies go stale forever.
+      const alreadyStored = contact.id && existingMap[contact.id];
+      if (!qualifies && !alreadyStored) {
+        skipped++;
+        continue;
+      }
+      if (!qualifies) refreshedStored++;
+      leads.push(transformContact(contact, customFieldMap));
+    }
+
     const { written, unchanged } = await saveLeadsBulk(leads, existingMap);
 
     const response = {
