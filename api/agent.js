@@ -21,7 +21,83 @@ async function kvDel(key) {
 }
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const MAX_STEPS = 10;
+const MAX_STEPS = 12;
+
+// ---- Context window management ----
+// Claude models support ~200k tokens of context. We keep the conversation as
+// large as possible (for long memory) while protecting against unbounded
+// growth from huge tool results.
+const MAX_CONTEXT_CHARS = 400000;      // ~100k tokens sent to the model
+const MAX_TOOL_RESULT_CHARS = 20000;   // cap a single tool result blob
+const MAX_STORED_MESSAGES = 200;       // cap what we persist in KV
+
+function truncateForContext(str, max) {
+  if (typeof str !== 'string' || str.length <= max) return str;
+  return str.slice(0, max) + `\n…[truncated ${str.length - max} chars]`;
+}
+
+function messageSize(m) {
+  try { return JSON.stringify(m).length; } catch { return 0; }
+}
+
+// Find the earliest index we can cut at without breaking Anthropic's
+// tool_use/tool_result pairing: a user turn whose content is a plain string.
+function isCleanCutPoint(m) {
+  return m && m.role === 'user' && typeof m.content === 'string';
+}
+
+// Build the message list actually sent to the model. Keeps as much history as
+// fits in MAX_CONTEXT_CHARS: first compacts old bulky tool results, then (only
+// if still too big) drops the oldest turns at a clean boundary.
+function prepareMessagesForModel(messages) {
+  let msgs = messages.map(m => ({ ...m }));
+  let total = msgs.reduce((s, m) => s + messageSize(m), 0);
+  if (total <= MAX_CONTEXT_CHARS) return msgs;
+
+  // Pass 1: shrink tool_result blocks in the OLDER half of the conversation.
+  const protectFrom = Math.max(0, msgs.length - 12); // keep recent turns intact
+  for (let i = 0; i < protectFrom && total > MAX_CONTEXT_CHARS; i++) {
+    const m = msgs[i];
+    if (m.role === 'user' && Array.isArray(m.content)) {
+      const before = messageSize(m);
+      m.content = m.content.map(b =>
+        b && b.type === 'tool_result' && typeof b.content === 'string' && b.content.length > 2000
+          ? { ...b, content: truncateForContext(b.content, 2000) }
+          : b
+      );
+      total += messageSize(m) - before;
+    }
+  }
+  if (total <= MAX_CONTEXT_CHARS) return msgs;
+
+  // Pass 2: drop oldest turns at a clean user-text boundary.
+  let cut = 0;
+  while (total > MAX_CONTEXT_CHARS && cut < msgs.length - 6) {
+    let next = cut + 1;
+    while (next < msgs.length - 6 && !isCleanCutPoint(msgs[next])) next++;
+    if (next >= msgs.length - 6) break;
+    for (let i = cut; i < next; i++) total -= messageSize(msgs[i]);
+    cut = next;
+  }
+  if (cut > 0) {
+    msgs = msgs.slice(cut);
+    // First kept message is a clean user-text turn; annotate it rather than
+    // inserting a new turn (roles must alternate).
+    if (msgs.length && typeof msgs[0].content === 'string') {
+      msgs[0] = { ...msgs[0], content: '[Earlier conversation trimmed for length.]\n\n' + msgs[0].content };
+    }
+  }
+  return msgs;
+}
+
+// Cap what we persist so a very long chat can't outgrow KV limits (which would
+// make saves silently fail and wipe the assistant's memory).
+function capStoredMessages(messages) {
+  if (messages.length <= MAX_STORED_MESSAGES) return messages;
+  let cut = messages.length - MAX_STORED_MESSAGES;
+  while (cut < messages.length && !isCleanCutPoint(messages[cut])) cut++;
+  return messages.slice(cut);
+}
 const BULK_TOOLS = new Set(['bulk_update_contacts', 'bulk_tag_contacts']);
 const CONFIRM_RE = /^(yes|y|yeah|yep|confirm|confirmed|go ahead|do it|proceed|ok|okay|sure|approve|approved)\.?!?$/i;
 
@@ -78,6 +154,13 @@ function isRetryableError(status, body) {
 const SYSTEM_PROMPT = `You are the CeleriTech CRM assistant, embedded in a GoHighLevel marketing dashboard.
 You help the user manage their GoHighLevel CRM by calling tools.
 
+MEMORY & CONTEXT — this is critical:
+- You have the FULL conversation history. USE IT. Before answering, re-read the recent turns and connect the current message to what was already discussed.
+- Resolve references from context: "them", "those contacts", "that tag", "the same ones", "do it again", "the second one" refer to things mentioned earlier in this conversation. Never ask the user to repeat information they already gave you.
+- Remember decisions, ids, tag names, pipelines, and search results from earlier turns and reuse them instead of re-looking them up (unless they may have changed).
+- If the user's message is short or vague (e.g. "yes", "the other one", "now remove it"), interpret it in the context of your immediately preceding message.
+- Only ask a clarifying question when the request is genuinely ambiguous even after considering the whole conversation — and then ask ONE specific question, not a list.
+
 What you CAN do (all via the GoHighLevel API):
 - Contacts: search, view full details, create, update any field (incl. custom fields), delete, add/remove tags, add notes, list/read notes.
 - Tasks: list, create, update (e.g. mark complete), assign to a user with a due date.
@@ -108,7 +191,7 @@ Rules:
   If you call a write tool without confirmed=true you'll get a CONFIRMATION REQUIRED preview — relay that to the user and wait.
 - Sending messages, deleting records, and enrolling into workflows are especially sensitive: always confirm first and never send/delete without explicit approval.
 - When you need a pipeline/stage/user/workflow/calendar id, look it up rather than guessing.
-- Be concise. Confirm what was done after a successful write. Use the user's own words for tags/sources verbatim.
+- Be concise but complete. Confirm what was done after a successful write. Use the user's own words for tags/sources verbatim.
 - If GoHighLevel is not configured, tell the user to set GHL credentials in Vercel.`;
 
 async function readBody(req) {
@@ -152,14 +235,13 @@ async function callClaude(apiKey, messages, model, timeoutMs = CLAUDE_CALL_TIMEO
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        // Keep output bounded: CRM actions are short (a tool call + a one-line
-        // confirmation). A high cap let the model run away generating huge
-        // replies (20s+) when given large/ambiguous input like a list of IDs.
+        // High enough that answers and multi-tool turns never get cut off
+        // mid-thought; timeouts are handled by the abort timer, not this cap.
         model,
-        max_tokens: 1024,
+        max_tokens: 4096,
         system: SYSTEM_PROMPT,
         tools: anthropicTools(),
-        messages,
+        messages: prepareMessagesForModel(messages),
       }),
       signal: ctrl.signal,
     });
@@ -291,17 +373,37 @@ module.exports = async function handler(req, res) {
 
     const chatId = body.chatId || crypto.randomUUID();
     const kvKey = `chat:${chatId}`;
-    const KV_TTL = 3600; // 1 hour
+    const KV_TTL = 60 * 60 * 24 * 7; // 7 days — long-lived chat memory
     const preferredModel = body.model || DEFAULT_MODEL;
     const actions = [];
     let usedModel = preferredModel;
     let bulkJob = null;
 
-    // Load existing conversation from KV, or start fresh.
+    // Record turns that happened outside this endpoint (e.g. the client's
+    // local bulk-confirm flow) so the assistant's memory stays in sync.
+    if (body.action === 'append_history') {
+      const stored = (await kvGet(kvKey)) || [];
+      const msgs = Array.isArray(stored) ? stored : [];
+      for (const t of (Array.isArray(body.turns) ? body.turns : [])) {
+        if (t && (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string') {
+          msgs.push({ role: t.role, content: t.content });
+        }
+      }
+      await kvSet(kvKey, capStoredMessages(msgs), { ex: KV_TTL });
+      sendJson(200, { ok: true, chatId });
+      return;
+    }
+
+    // Load existing conversation from KV, or start fresh. If KV lost the
+    // conversation (expired, size limit, transient failure) fall back to the
+    // client-supplied history so the assistant never suddenly forgets the chat.
     let messages = [];
     if (body.chatId) {
       const stored = await kvGet(kvKey);
       if (Array.isArray(stored)) messages = stored;
+    }
+    if (!messages.length && Array.isArray(body.history) && body.history.length) {
+      messages = toAnthropicMessages(body.history);
     }
 
     // A "continue" resume (client auto-retry after a graceful timeout) reloads
@@ -334,7 +436,7 @@ module.exports = async function handler(req, res) {
     // runs long, fire a clean JSON response just before the function would be
     // hard-killed. Background work keeps running but the client gets an answer.
     budgetTimer = setTimeout(() => {
-      kvSet(kvKey, messages, { ex: KV_TTL }).catch(() => {});
+      kvSet(kvKey, capStoredMessages(messages), { ex: KV_TTL }).catch(() => {});
       sendJson(200, {
         ok: true,
         reply: bulkJob
@@ -358,7 +460,7 @@ module.exports = async function handler(req, res) {
         const reply = (result && result.message) || 'Bulk job queued.';
         bulkJob = bulkJobFromResult(result);
         messages.push({ role: 'assistant', content: reply });
-        await kvSet(kvKey, messages, { ex: KV_TTL });
+        await kvSet(kvKey, capStoredMessages(messages), { ex: KV_TTL });
         sendJson(200, {
           ok: true,
           reply,
@@ -381,7 +483,7 @@ module.exports = async function handler(req, res) {
     // Return a clean JSON "still working" response instead of letting Vercel
     // hard-timeout and serve an unparseable HTML 504 page.
     const returnGracefully = async () => {
-      await kvSet(kvKey, messages, { ex: KV_TTL });
+      await kvSet(kvKey, capStoredMessages(messages), { ex: KV_TTL });
       sendJson(200, {
         ok: true,
         reply: bulkJob
@@ -433,7 +535,7 @@ module.exports = async function handler(req, res) {
           .map(b => b.text)
           .join('\n')
           .trim();
-        await kvSet(kvKey, messages, { ex: KV_TTL });
+        await kvSet(kvKey, capStoredMessages(messages), { ex: KV_TTL });
         sendJson(200, {
           ok: true,
           reply: textOut || '(no response)',
@@ -475,18 +577,20 @@ module.exports = async function handler(req, res) {
         if (result && result.preview && BULK_TOOLS.has(block.name)) {
           const input = block.input || result.proposed || {};
           pendingBulkPreview = { tool: block.name, input, reply: formatBulkPreviewReply(block.name, input) };
-          await kvSet(`pending:${chatId}`, { tool: block.name, input }, { ex: KV_TTL });
+          // Pending bulk confirmations stay short-lived on purpose: confirming
+          // a week-old "yes" against live CRM data would be dangerous.
+          await kvSet(`pending:${chatId}`, { tool: block.name, input }, { ex: 3600 });
         }
         toolResults.push({
           type: 'tool_result',
           tool_use_id: block.id,
-          content: JSON.stringify(result),
+          content: truncateForContext(JSON.stringify(result), MAX_TOOL_RESULT_CHARS),
         });
       }
       messages.push({ role: 'user', content: toolResults });
 
       if (pendingBulkPreview) {
-        await kvSet(kvKey, messages, { ex: KV_TTL });
+        await kvSet(kvKey, capStoredMessages(messages), { ex: KV_TTL });
         sendJson(200, {
           ok: true,
           reply: pendingBulkPreview.reply,
@@ -501,7 +605,7 @@ module.exports = async function handler(req, res) {
       // Bulk job queued — return immediately so the client can run /api/bulk
       // without waiting for another Claude round-trip (which often hits 504).
       if (bulkJob && bulkReply) {
-        await kvSet(kvKey, messages, { ex: KV_TTL });
+        await kvSet(kvKey, capStoredMessages(messages), { ex: KV_TTL });
         sendJson(200, {
           ok: true,
           reply: bulkReply,
@@ -515,7 +619,7 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    await kvSet(kvKey, messages, { ex: KV_TTL });
+    await kvSet(kvKey, capStoredMessages(messages), { ex: KV_TTL });
     sendJson(200, { ok: true, reply: 'Stopped after too many steps. Please refine your request.', actions, chatId, model: usedModel });
   } catch (err) {
     sendJson(500, { ok: false, error: String((err && err.message) || err) });

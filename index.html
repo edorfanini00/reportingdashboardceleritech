@@ -858,6 +858,17 @@ function isConfirmMessage(text) {
   return /^(yes|y|yeah|yep|confirm|confirmed|go ahead|do it|proceed|ok|okay|sure|approve|approved)\.?!?$/i.test(String(text || '').trim());
 }
 
+// Turns handled locally (e.g. bulk confirm bypasses /api/agent) are recorded
+// into the server-side conversation so the assistant remembers them later.
+function syncChatMemory(turns) {
+  if (!chatId || !turns || !turns.length) return;
+  fetch('/api/agent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'append_history', chatId, turns }),
+  }).catch(() => {});
+}
+
 function capturePendingBulk(actions) {
   if (!actions || !actions.length) return;
   for (let i = actions.length - 1; i >= 0; i--) {
@@ -1192,8 +1203,10 @@ async function sendChat(e) {
     try {
       const data = await queueBulkDirect(pending);
       removeTyping();
-      addChatBubble('assistant', data.message || 'Bulk job queued.');
-      chatHistory.push({ role: 'assistant', content: data.message || 'Bulk job queued.' });
+      const replyMsg = data.message || 'Bulk job queued.';
+      addChatBubble('assistant', replyMsg);
+      chatHistory.push({ role: 'assistant', content: replyMsg });
+      syncChatMemory([{ role: 'user', content: text }, { role: 'assistant', content: replyMsg }]);
       if (data.bulkJob && data.bulkJob.id && (data.bulkJob.total == null || data.bulkJob.total > 0)) await runBulkJob(data.bulkJob);
     } catch (err) {
       removeTyping();
@@ -1219,6 +1232,10 @@ async function sendChat(e) {
 async function postToAgent(text, isAuto) {
   chatBusy = true;
   document.getElementById('chatSendBtn').disabled = true;
+  // History as it was BEFORE this new message — the server appends the new
+  // message itself. Used as a fallback so the assistant keeps its memory even
+  // if the server-side conversation store expired or failed.
+  const priorHistory = chatHistory.slice(-60);
   if (!isAuto) {
     addChatBubble('user', text);
     chatHistory.push({ role: 'user', content: text });
@@ -1230,6 +1247,7 @@ async function postToAgent(text, isAuto) {
     const payload = isAuto
       ? { continue: true, model: selectedModel }
       : { message: text, model: selectedModel };
+    if (priorHistory.length) payload.history = priorHistory;
     if (chatId) payload.chatId = chatId;
     const r = await fetch('/api/agent', {
       method: 'POST',
@@ -1262,9 +1280,9 @@ async function postToAgent(text, isAuto) {
     }
     if (data.chatId) chatId = data.chatId;
     if (data.fallback && data.model) {
+      // Notify, but do NOT switch the selected model permanently — a one-off
+      // slow response shouldn't downgrade every future turn to a weaker model.
       addFallbackNotice(selectedModel, data.model);
-      selectedModel = data.model;
-      renderModelDropdown();
     }
     addActionLog(data.actions);
 
