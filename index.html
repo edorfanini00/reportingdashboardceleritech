@@ -583,10 +583,11 @@ function showFunnelLeads(type) {
     renderContactListModal(title + ' — All Time', allLeads, accent);
 }
 
-// Contacts behind a Status row (selected date range).
+// Contacts behind a Status row (selected date range, case-insensitive match).
 function showStatusLeads(encoded) {
-    const label = decodeURIComponent(encoded);
-    const leads = ((currentViewData && currentViewData.leads) || []).filter(l => statusKeyOf(l) === label);
+    const lc = decodeURIComponent(encoded);
+    const leads = ((currentViewData && currentViewData.leads) || []).filter(l => statusKeyOf(l).toLowerCase() === lc);
+    const label = leads.length ? statusKeyOf(leads[0]) : lc;
     renderContactListModal('Status: ' + label, leads, 'orange');
 }
 
@@ -1936,12 +1937,16 @@ function renderAnalytics(data) {
         if (l.meetingBooked || String(l.callStatus || '').toLowerCase() === 'booked' || has('meeting booked')) cBooked++;
     });
 
-    // Group by the setter's EXACT status wording so the card mirrors what's
-    // typed in GoHighLevel. Leads without a Status fall into "No Status Yet".
+    // Group by the setter's status wording as typed in GoHighLevel, merging
+    // trivial case differences ("Not Interested" vs "not interested") while
+    // displaying the most common spelling. No Status falls into "No Status Yet".
     const statusGroups = {};
     leads.forEach(l => {
         const key = statusKeyOf(l);
-        statusGroups[key] = (statusGroups[key] || 0) + 1;
+        const lc = key.toLowerCase();
+        if (!statusGroups[lc]) statusGroups[lc] = { count: 0, variants: {} };
+        statusGroups[lc].count++;
+        statusGroups[lc].variants[key] = (statusGroups[lc].variants[key] || 0) + 1;
     });
     const STATUS_COLORS = ['#10b981', '#f59e0b', '#0ea5e9', '#8b5cf6', '#ef4444', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
     const statusColor = (label, i) => {
@@ -1965,13 +1970,15 @@ function renderAnalytics(data) {
     const outcomesEl = document.getElementById('callOutcomes');
     if (outcomesEl) {
         const entries = Object.entries(statusGroups).sort((a, b) => {
-            if (a[0] === 'No Status Yet') return 1;
-            if (b[0] === 'No Status Yet') return -1;
-            return b[1] - a[1];
+            if (a[0] === 'no status yet') return 1;
+            if (b[0] === 'no status yet') return -1;
+            return b[1].count - a[1].count;
         });
-        outcomesEl.innerHTML = entries.map(([label, count], i) =>
-            outcomeRow(label, count, statusColor(label, i), "showStatusLeads('" + encodeURIComponent(label) + "')")
-        ).join('');
+        outcomesEl.innerHTML = entries.map(([lc, g], i) => {
+            // Display the most frequent spelling among the case variants.
+            const label = Object.entries(g.variants).sort((a, b) => b[1] - a[1])[0][0];
+            return outcomeRow(label, g.count, statusColor(label, i), "showStatusLeads('" + encodeURIComponent(lc) + "')");
+        }).join('');
     }
     // Contacts that carry the GHL "Reason" field, grouped by its exact text.
     const reasonEl = document.getElementById('reasonBreakdown');
