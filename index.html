@@ -74,7 +74,7 @@ Synced Jhon
 <h2 class="text-xl md:text-2xl font-bold text-slate-800 hidden sm:block">Welcome</h2>
 <div id="weekSelector" class="flex items-center gap-2 bg-white/50 backdrop-blur-md border border-white/80 rounded-xl px-3 shadow-sm w-full sm:w-auto">
 <svg class="w-4 h-4 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-<select class="bg-transparent border-none outline-none text-sm font-bold text-slate-700 py-2.5 cursor-pointer appearance-none pr-6 w-full" id="dateRangeSelect" onchange="handleWeekChange(this.value)" style="background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E&quot;); background-repeat: no-repeat; background-position: right center; background-size: 14px;">
+<select class="bg-transparent border-none outline-none text-sm font-bold text-slate-700 py-2.5 cursor-pointer appearance-none pr-6 w-full" id="dateRangeSelect" onchange="onWeekSelectChange(this.value)" style="background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E&quot;); background-repeat: no-repeat; background-position: right center; background-size: 14px;">
 <optgroup label="Quick Select">
 <option value="all-time">All Time</option>
 <option value="1-year">Past 1 Year</option>
@@ -2011,6 +2011,10 @@ function rebuildWeekMetrics(key) {
     });
 }
 const QUICK_RANGES = ['all-time','1-year','3-months','1-month','2-weeks','1-week'];
+// Only stick to the selector's value if the USER picked it; otherwise a fresh
+// page load follows the newest week so recent campaigns (e.g. Metodo) show up.
+let userPickedRange = false;
+function onWeekSelectChange(v) { userPickedRange = true; handleWeekChange(v); }
 function rebuildWeekSelectOptions() {
     const sel = document.getElementById('dateRangeSelect');
     const group = document.getElementById('specificWeeksGroup');
@@ -2474,7 +2478,10 @@ async function refreshGhlLeads(pull = false) {
         }
         const sel = document.getElementById('dateRangeSelect');
         const latest = allWeeksInOrder[allWeeksInOrder.length - 1];
-        handleWeekChange(sel.value && (allWeeksInOrder.includes(sel.value) || ['all-time','1-year','3-months','1-month','2-weeks','1-week'].includes(sel.value)) ? sel.value : latest);
+        const keepUserChoice = userPickedRange && sel.value
+          && (allWeeksInOrder.includes(sel.value) || QUICK_RANGES.includes(sel.value));
+        if (!keepUserChoice) sel.value = latest;
+        handleWeekChange(keepUserChoice ? sel.value : latest);
     } catch (e) {
         showGhlBanner('Could not reach /api/leads (' + e.message + '). Deploy on Vercel with the API routes for live GoHighLevel sync.');
         setSyncStatus('Sync failed');
