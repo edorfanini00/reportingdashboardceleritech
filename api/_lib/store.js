@@ -8,16 +8,34 @@ function isConfigured() {
   return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
 }
 
+// Booked/attended are sticky: once a lead was marked booked (via the Status
+// field, a tag, or manually) a later re-sync without that signal must not
+// un-book it. Also stamps meetingBookedAt / meetingAttendedAt the first time
+// a sync OBSERVES the transition, so the dashboard can count a booking in the
+// week it happened rather than the week the lead was created. Leads stored as
+// booked before this existed keep no timestamp (dashboard falls back to their
+// creation date).
+function applyMeetingStickiness(lead, existing) {
+  const now = new Date().toISOString();
+  if (existing) {
+    if (existing.meetingBooked && !lead.meetingBooked) lead.meetingBooked = true;
+    if (existing.meetingAttended && !lead.meetingAttended) lead.meetingAttended = true;
+    if (existing.meetingBookedAt) lead.meetingBookedAt = existing.meetingBookedAt;
+    else if (lead.meetingBooked && !existing.meetingBooked) lead.meetingBookedAt = now;
+    if (existing.meetingAttendedAt) lead.meetingAttendedAt = existing.meetingAttendedAt;
+    else if (lead.meetingAttended && !existing.meetingAttended) lead.meetingAttendedAt = now;
+  } else {
+    // Brand-new contact: attribute any booking to its creation date — we
+    // can't know when it actually happened before we first saw the contact.
+    if (lead.meetingBooked) lead.meetingBookedAt = lead.dateISO || now;
+    if (lead.meetingAttended) lead.meetingAttendedAt = lead.dateISO || now;
+  }
+}
+
 async function saveLead(lead) {
-  // Booked/attended are sticky: once a lead was marked booked (via the Status
-  // field, a tag, or manually) a later re-sync without that signal must not
-  // un-book it.
   try {
     const existing = await kv.hget(HASH_KEY, lead.id);
-    if (existing) {
-      if (existing.meetingBooked && !lead.meetingBooked) lead.meetingBooked = true;
-      if (existing.meetingAttended && !lead.meetingAttended) lead.meetingAttended = true;
-    }
+    applyMeetingStickiness(lead, existing);
   } catch { /* best effort: fall through and save as-is */ }
   await kv.hset(HASH_KEY, { [lead.id]: lead });
 }
@@ -36,12 +54,9 @@ async function saveLeadsBulk(leads, existingMap) {
   const toWrite = {};
   let unchanged = 0;
   for (const lead of leads) {
-    const existing = existingMap ? existingMap[lead.id] : null;
-    if (existing) {
-      if (existing.meetingBooked && !lead.meetingBooked) lead.meetingBooked = true;
-      if (existing.meetingAttended && !lead.meetingAttended) lead.meetingAttended = true;
-      if (JSON.stringify(existing) === JSON.stringify(lead)) { unchanged++; continue; }
-    }
+    const existing = (existingMap && existingMap[lead.id]) || null;
+    applyMeetingStickiness(lead, existing);
+    if (existing && JSON.stringify(existing) === JSON.stringify(lead)) { unchanged++; continue; }
     toWrite[lead.id] = lead;
   }
   const ids = Object.keys(toWrite);

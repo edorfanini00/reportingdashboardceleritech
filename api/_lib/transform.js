@@ -78,29 +78,41 @@ function normalizeTags(raw) {
 // Miami neighborhood (USA) campaign leads carry "en miami neighborhoods" /
 // "es miami neighborhood".
 //
+// A Facebook ad-campaign source. GHL used to name these "Facebook - Metodo
+// Petroleo" and now uses "FB - Metodo Petroleo" / "FB - Alimentacion" /
+// "FB - Contenedores", so both spellings must match ("fb" as a whole word,
+// so e.g. "fbk-widgets" doesn't).
+function isFacebookSource(source) {
+  const s = String(source || '').toLowerCase();
+  return s.includes('facebook') || /(^|[^a-z])fb([^a-z]|$)/.test(s);
+}
+
 // The metodo tags also cover email + Instagram DM outreach; the report only
 // tracks the Facebook ad leads, so metodo-tagged contacts qualify ONLY when
-// their GHL source is a Facebook campaign (e.g. "Facebook - Metodo
-// Alimentacion", "Facebook - Metodo Petroleo").
+// their GHL source is a Facebook campaign (e.g. "FB - Metodo Alimentacion").
+// Any contact whose source names a known FB campaign qualifies outright.
 function hasQualifyingTag(tags, source) {
+  if (pipelineFromSource(source)) return true;
   const normalized = normalizeTags(tags);
   const has = (s) => normalized.some(t => t.includes(s));
   if (has('metodo') && !has('miami neighborhood')) {
-    return String(source || '').toLowerCase().includes('facebook');
+    return isFacebookSource(source);
   }
   return normalized.some(t => t.includes('meta') || t.includes('fda') || t.includes('oil') || t.includes('miami neighborhood'));
 }
 
-// The GHL contact "source" names the exact ad campaign (e.g. "Facebook -
-// Metodo Petroleo", "Facebook - Food Manufacturer", "Facebook - Miami
-// neighborhood ES"). When it matches a known campaign it beats the tags.
+// The GHL contact "source" names the exact ad campaign (e.g. "FB - Metodo
+// Petroleo", "FB - Food Manufacturer", "FB - Miami neighborhood ES").
+// When it matches a known campaign it beats the tags. Campaign words are
+// matched without requiring the "metodo" prefix so both "FB - Metodo
+// Alimentacion" and "FB - Alimentacion" categorize the same way.
 function pipelineFromSource(source) {
   const s = String(source || '').toLowerCase();
-  if (!s.includes('facebook')) return null;
+  if (!isFacebookSource(s)) return null;
   if (s.includes('miami')) return 'Miami Neighborhood';
-  if (s.includes('metodo alimentacion')) return 'Metodo Alimentacion';
-  if (s.includes('metodo petroleo')) return 'Metodo Oil & Gas';
-  if (s.includes('metodo contenedores')) return 'Metodo Contenedores';
+  if (s.includes('alimentacion')) return 'Metodo Alimentacion';
+  if (s.includes('petroleo')) return 'Metodo Oil & Gas';
+  if (s.includes('contenedores')) return 'Metodo Contenedores';
   if (s.includes('metodo')) return 'Metodo';
   if (s.includes('food manufacturer')) return 'Food Manufacturer';
   if (s.includes('fda')) return 'FDA';

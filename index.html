@@ -589,6 +589,19 @@ function canonicalReasonOf(l) {
     return 'Unrecognized';
 }
 
+// Display date for WHEN a meeting was booked/attended. Uses the server-side
+// status-change timestamp; leads booked before timestamps existed fall back
+// to their lead date (which is also how they are counted).
+function shortDateOf(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    // UTC, matching how lead dates and week buckets are computed everywhere.
+    return GHL_MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate();
+}
+function bookedDateLabel(l) { return shortDateOf(l.meetingBookedAt || l.dateISO) || l.date || ''; }
+function attendedDateLabel(l) { return shortDateOf(l.meetingAttendedAt || l.meetingBookedAt || l.dateISO) || l.date || ''; }
+
 // Shared contact-list modal (used by funnel stats, Status rows, Reason rows).
 function renderContactListModal(title, list, accent) {
     document.getElementById('funnelModalTitle').innerText = title;
@@ -606,28 +619,29 @@ function renderContactListModal(title, list, accent) {
         else if (lead.meetingBooked) stateBadge = '<span class="text-[8px] font-black text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded uppercase">Booked</span>';
         const statusTxt = String(lead.statusText || lead.callStatus || '').trim();
         const statusLine = statusTxt ? '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Status</p><p>' + escapeHtml(statusTxt) + '</p></div>' : '';
+        const bookedLine = lead.meetingBooked ? '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Booked on</p><p class="text-orange-600">' + escapeHtml(bookedDateLabel(lead)) + '</p></div>' : '';
+        const attendedLine = lead.meetingAttended ? '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Attended on</p><p class="text-emerald-600">' + escapeHtml(attendedDateLabel(lead)) + '</p></div>' : '';
         const reasonLine = lead.reason ? '<div class="space-y-0.5 col-span-1 sm:col-span-2"><p class="text-slate-400 uppercase text-[8px]">Reason</p><p>' + escapeHtml(String(lead.reason)) + '</p></div>' : '';
         container.innerHTML += '<div class="bg-white/60 border border-slate-100 p-4 rounded-[20px] shadow-sm">'
             + '<div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-2"><div><h4 class="text-base md:text-lg font-bold text-slate-800">' + escapeHtml(lead.name || '') + '</h4><p class="text-[9px] font-black text-orange-500 uppercase mt-0.5">' + escapeHtml(lead.business || '') + '</p></div><div class="flex items-center gap-1.5">' + campBadge + stateBadge + '</div></div>'
             + '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] md:text-[11px] font-semibold text-slate-600">'
             + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Email</p><p class="truncate">' + escapeHtml(lead.email || '') + '</p></div>'
             + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Phone</p><p>' + escapeHtml(lead.phone || '') + '</p></div>'
-            + statusLine + reasonLine
+            + bookedLine + attendedLine + statusLine + reasonLine
             + '</div></div>';
     });
     toggleFunnelModal(true);
 }
 
 function showFunnelLeads(type) {
-    const allLeads = [];
-    Object.values(leadsByWeek).forEach(weekLeads => { weekLeads.forEach(l => {
-        if (type === 'all') allLeads.push(l);
-        else if (type === 'booked' && l.meetingBooked) allLeads.push(l);
-        else if (type === 'attended' && l.meetingAttended) allLeads.push(l);
-    }); });
+    // Mirrors the funnel numbers: leads created in the selected range, and
+    // meetings booked/attended during the selected range.
+    const data = currentViewData;
+    if (!data) return;
+    const list = (type === 'all' ? data.leads : (type === 'booked' ? data.bookedLeads : data.attendedLeads)) || [];
     const title = type === 'all' ? 'All Leads' : (type === 'booked' ? 'Meetings Booked' : 'Meetings Attended');
     const accent = type === 'all' ? 'slate' : (type === 'booked' ? 'orange' : 'emerald');
-    renderContactListModal(title + ' — All Time', allLeads, accent);
+    renderContactListModal(title + ' — ' + (data.dateRange || 'All Time'), list, accent);
 }
 
 // Contacts behind a Status bucket (selected date range). Contact cards still
@@ -1584,7 +1598,38 @@ function getKeysForRange(rangeValue) {
 }
 function parsePercent(str) { return parseFloat(str.replace('%', '')) || 0; }
 
-
+// --- Booked-by-date helpers ---------------------------------------------
+// A meeting counts as "booked in this range" based on WHEN the booking
+// happened (meetingBookedAt, stamped by the server the first time a sync sees
+// the status flip to Booked) — NOT the week the lead was created. So a
+// contact from an earlier week whose status turns Booked this week counts in
+// this week's funnel. Booked leads stored before timestamps existed fall back
+// to their creation date, which preserves the old behavior for them.
+function weekKeyStartDate(k) {
+    const [mon, day] = String(k).split('-');
+    const idx = GHL_MONTHS.findIndex(m => m.toLowerCase() === mon);
+    const now = new Date();
+    // Week keys carry no year: months after the current one are last year's.
+    const year = idx > now.getUTCMonth() ? now.getUTCFullYear() - 1 : now.getUTCFullYear();
+    return new Date(Date.UTC(year, Math.max(idx, 0), parseInt(day, 10) || 1));
+}
+function rangeWindowFor(keys) {
+    let start = Infinity, end = -Infinity;
+    keys.forEach(k => {
+        const s = weekKeyStartDate(k).getTime();
+        if (s < start) start = s;
+        if (s + 7 * 86400000 > end) end = s + 7 * 86400000;
+    });
+    return { start, end };
+}
+function bookedTimeOf(l, wk) {
+    const t = Date.parse(l.meetingBookedAt || l.dateISO || '');
+    return isNaN(t) ? weekKeyStartDate(wk).getTime() : t;
+}
+function attendedTimeOf(l, wk) {
+    const t = Date.parse(l.meetingAttendedAt || l.meetingBookedAt || l.dateISO || '');
+    return isNaN(t) ? weekKeyStartDate(wk).getTime() : t;
+}
 
 function getAggregatedData(keys) {
     let agg = { outreachTotal:0, pipelineCount:0, meetingsBooked:0, meetingsAttended:0, entSent:0, entOpenRaw:0, entClickRaw:0, entReplyRaw:0, foodSent:0, foodOpenRaw:0, foodClickRaw:0, foodReplyRaw:0, erpSent:0, erpOpenRaw:0, erpClickRaw:0, erpReplyRaw:0, chartLabels:[], chartValues:[], chartFdaValues:[], chartFoodValues:[], chartOilValues:[], chartMetodoValues:[], chartMetodoAlimValues:[], chartMetodoOilValues:[], chartMiamiValues:[], leads:[], dateRange:'' };
@@ -1645,9 +1690,27 @@ function getAggregatedData(keys) {
                 agg.chartMiamiValues.push(day.miami);
             });
         }
-        if (leadsByWeek[key]) { agg.leads.push(...leadsByWeek[key]); leadsByWeek[key].forEach(l => { if(l.meetingBooked) agg.meetingsBooked++; if(l.meetingAttended) agg.meetingsAttended++; }); }
+        if (leadsByWeek[key]) { agg.leads.push(...leadsByWeek[key]); }
     });
-    if (chronKeys.length > 0) { let s = weeklyData[chronKeys[0]]; let e = weeklyData[chronKeys[chronKeys.length-1]]; agg.dateRange = chronKeys.length===1 ? s.dateRange : s.dateRange.split(' - ')[0]+' - '+(e.dateRange.split(' - ')[1]||e.dateRange); }
+    // Booked/attended are counted by booking date across ALL weeks, so leads
+    // created before the selected range still count when they got booked
+    // (or attended) inside it.
+    const win = rangeWindowFor(chronKeys);
+    agg.bookedLeads = []; agg.attendedLeads = [];
+    Object.entries(leadsByWeek).forEach(([wk, wl]) => wl.forEach(l => {
+        if (l.meetingBooked) { const t = bookedTimeOf(l, wk); if (t >= win.start && t < win.end) agg.bookedLeads.push(l); }
+        if (l.meetingAttended) { const t = attendedTimeOf(l, wk); if (t >= win.start && t < win.end) agg.attendedLeads.push(l); }
+    }));
+    agg.meetingsBooked = agg.bookedLeads.length;
+    agg.meetingsAttended = agg.attendedLeads.length;
+    if (chronKeys.length > 0) {
+        let s = weeklyData[chronKeys[0]]; let e = weeklyData[chronKeys[chronKeys.length-1]];
+        let endLabel = e.dateRange.split(' - ')[1] || e.dateRange;
+        // Same-month week labels end in a bare day ("Jun 14 - 20"), so prefix
+        // the month: multi-week ranges read "Feb 23 - Jun 20", not "Feb 23 - 20".
+        if (/^\d/.test(endLabel)) endLabel = e.dateRange.split(' ')[0] + ' ' + endLabel;
+        agg.dateRange = chronKeys.length===1 ? s.dateRange : s.dateRange.split(' - ')[0]+' - '+endLabel;
+    }
     const fmt = (raw, sent) => sent > 0 ? (raw/sent*100).toFixed(1)+'%' : '0%';
     agg.entOpen=fmt(agg.entOpenRaw,agg.entSent); agg.entClick=fmt(agg.entClickRaw,agg.entSent); agg.entReply=fmt(agg.entReplyRaw,agg.entSent);
     agg.foodOpen=fmt(agg.foodOpenRaw,agg.foodSent); agg.foodClick=fmt(agg.foodClickRaw,agg.foodSent); agg.foodReply=fmt(agg.foodReplyRaw,agg.foodSent);
@@ -1682,9 +1745,10 @@ function handleWeekChange(rangeValue) {
     document.getElementById('erpClickRate').innerText = data.erpClick;
     document.getElementById('erpReplyRate').innerText = data.erpReply;
 
-    // Update funnel metrics (always all-time)
-    let totalLeads = 0, booked = 0, attended = 0;
-    Object.values(leadsByWeek).forEach(weekLeads => { weekLeads.forEach(l => { totalLeads++; if(l.meetingBooked) booked++; if(l.meetingAttended) attended++; }); });
+    // Update funnel metrics for the SELECTED range: leads created in the
+    // range, plus meetings booked/attended DURING the range (including
+    // contacts from earlier weeks whose status flipped inside it).
+    const totalLeads = data.leads.length, booked = data.meetingsBooked, attended = data.meetingsAttended;
     const bookedPct = totalLeads > 0 ? (booked/totalLeads*100).toFixed(1) : '0';
     const attendedPct = booked > 0 ? (attended/booked*100).toFixed(1) : '0';
     document.getElementById('funnelTotalLeads').innerText = totalLeads;
@@ -1761,7 +1825,8 @@ function showBookedCampaign(gi) {
             + '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] md:text-[11px] font-semibold text-slate-600">'
             + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Email</p><p class="truncate">' + escapeHtml(lead.email || '--') + '</p></div>'
             + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Phone</p><p>' + escapeHtml(lead.phone || '--') + '</p></div>'
-            + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Date</p><p>' + escapeHtml(lead.date || '--') + '</p></div>'
+            + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Lead Date</p><p>' + escapeHtml(lead.date || '--') + '</p></div>'
+            + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Booked on</p><p class="text-orange-600">' + escapeHtml(bookedDateLabel(lead) || '--') + '</p></div>'
             + '<div class="space-y-0.5"><p class="text-slate-400 uppercase text-[8px]">Source</p><p class="truncate">' + escapeHtml(lead.source || '--') + '</p></div>'
             + '</div></div>';
     }).join('');
@@ -1818,6 +1883,9 @@ const CHART_TICKS = { color: '#94a3b8', font: { size: 10, weight: 'bold' } };
 
 function renderAnalytics(data) {
     const leads = (data && data.leads) || [];
+    // Bookings are counted by booking date (see bookedTimeOf), so this can
+    // include contacts created before the selected range.
+    const bookedInRange = (data && data.bookedLeads) || leads.filter(l => l.meetingBooked);
     const ctxEl = document.getElementById('analyticsContext');
     if (ctxEl) ctxEl.textContent = leads.length + ' leads · ' + (data.dateRange || '');
 
@@ -1844,7 +1912,12 @@ function renderAnalytics(data) {
     leads.forEach(l => {
         const p = canonicalPipe(l.pipeline);
         mix[p] = (mix[p] || 0) + 1;
-        if (l.meetingBooked) booked[p] = (booked[p] || 0) + 1;
+    });
+    bookedInRange.forEach(l => {
+        const p = canonicalPipe(l.pipeline);
+        booked[p] = (booked[p] || 0) + 1;
+        // Campaigns with a booking but no NEW lead this range still get a row.
+        if (!(p in mix)) mix[p] = 0;
     });
     const mixEntries = Object.entries(mix).sort((a, b) => b[1] - a[1]);
 
@@ -1915,8 +1988,7 @@ function renderAnalytics(data) {
     // Group the actual booked leads per campaign so the names can be listed
     // and opened from the chart.
     const bookedBy = {};
-    leads.forEach(l => {
-        if (!l.meetingBooked) return;
+    bookedInRange.forEach(l => {
         const p = canonicalPipe(l.pipeline);
         (bookedBy[p] = bookedBy[p] || []).push(l);
     });
@@ -1974,13 +2046,7 @@ function renderAnalytics(data) {
     });
 
     // --- Status + Reason (GHL fields) ---
-    const tagsOf = (l) => (l.tags || []).map(t => String(t).toLowerCase());
-    let cBooked = 0;
-    leads.forEach(l => {
-        const ts = tagsOf(l);
-        const has = (s) => ts.some(t => t.includes(s));
-        if (l.meetingBooked || String(l.callStatus || '').toLowerCase() === 'booked' || has('meeting booked')) cBooked++;
-    });
+    const cBooked = bookedInRange.length;
 
     // Bucket every contact into the official GHL status options.
     const statusGroups = {};
@@ -2205,14 +2271,20 @@ function mergeGhlLeads(ghlLeads) {
         const weekStart = ghlWeekStart(iso);
         const key = ghlWeekKey(iso);
         ensureWeekBucket(key, weekStart);
+        // A booking's week must exist as a selectable bucket too, even when no
+        // lead was CREATED that week, so its funnel numbers are reachable.
+        if (lead.meetingBookedAt) ensureWeekBucket(ghlWeekKey(lead.meetingBookedAt), ghlWeekStart(lead.meetingBookedAt));
+        if (lead.meetingAttendedAt) ensureWeekBucket(ghlWeekKey(lead.meetingAttendedAt), ghlWeekStart(lead.meetingAttendedAt));
         const byId = lead.id && findAnywhere(l => l.id === lead.id);
         if (byId) {
             // Same GHL contact: replace with the fresh server copy so status,
             // tags and pipeline changes show up on every sync. Booked/attended
-            // stay sticky.
+            // stay sticky (with their booking timestamps).
             const existing = leadsByWeek[byId.wk][byId.idx];
             if (existing.meetingBooked) lead.meetingBooked = true;
             if (existing.meetingAttended) lead.meetingAttended = true;
+            if (!lead.meetingBookedAt && existing.meetingBookedAt) lead.meetingBookedAt = existing.meetingBookedAt;
+            if (!lead.meetingAttendedAt && existing.meetingAttendedAt) lead.meetingAttendedAt = existing.meetingAttendedAt;
             leadsByWeek[byId.wk][byId.idx] = lead;
             return;
         }
@@ -2233,6 +2305,8 @@ function mergeGhlLeads(ghlLeads) {
             if (lead.fields && lead.fields.length) existing.fields = lead.fields;
             if (lead.meetingBooked) existing.meetingBooked = true;
             if (lead.meetingAttended) existing.meetingAttended = true;
+            if (lead.meetingBookedAt && !existing.meetingBookedAt) existing.meetingBookedAt = lead.meetingBookedAt;
+            if (lead.meetingAttendedAt && !existing.meetingAttendedAt) existing.meetingAttendedAt = lead.meetingAttendedAt;
             return;
         }
         leadsByWeek[key].push(lead);
