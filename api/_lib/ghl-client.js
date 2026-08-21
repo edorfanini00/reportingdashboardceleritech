@@ -31,6 +31,27 @@ async function fetchWithRetry(url, options, { maxRetries = 3, maxWaitMs = 2500 }
   return res;
 }
 
+// Retry a GET that a write depends on. GoHighLevel intermittently answers
+// /users/ with `401 {"message":"Command timed out"}`, and letting that through
+// would abort a perfectly valid job (e.g. "assign these to Kimberly") because
+// the owner couldn't be looked up.
+function isTransientReadFailure(status, body) {
+  if (status === 429 || status >= 500) return true;
+  return status === 401 && /command timed out|timeout/i.test(body || '');
+}
+
+async function fetchReadWithRetry(url, options, { maxRetries = 3 } = {}) {
+  let res, text;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    res = await fetch(url, options);
+    text = await res.text();
+    if (res.ok || !isTransientReadFailure(res.status, text)) break;
+    if (attempt === maxRetries) break;
+    await new Promise(r => setTimeout(r, Math.min(400 * Math.pow(2, attempt) + Math.random() * 200, 2000)));
+  }
+  return { res, text };
+}
+
 async function searchPage({ page, pageLimit, filters, searchAfter, query }) {
   const { token, locationId } = getCredentials();
   const body = { locationId, pageLimit };
@@ -98,6 +119,26 @@ async function searchByTagEquals(tag, pageLimit = 100, maxPages = 50) {
   return all;
 }
 
+// --- Advanced filter search ---
+// GoHighLevel has no public Smart List API, but /contacts/search accepts the
+// same field/operator/value filters the Smart List builder uses, so a saved
+// view can be reproduced by passing its filters here. Returns the exact match
+// count so an audience can be verified BEFORE anything is written to it.
+async function countContacts({ filters, query } = {}) {
+  const { total } = await searchPage({ page: 1, pageLimit: 1, filters, query });
+  return total == null ? null : total;
+}
+
+// One page of an arbitrary filter search (used to resolve bulk-job targets).
+async function searchFilterPage({ filters, query, page = 1, pageLimit = 100 }) {
+  return searchPage({ page, pageLimit, filters, query });
+}
+
+// A tag filter is just the simplest possible advanced filter.
+function tagFilters(tag) {
+  return [{ field: 'tags', operator: 'eq', value: tag }];
+}
+
 // Fetch contacts that have any qualifying tag (deduped by id).
 async function fetchQualifyingContacts() {
   const byId = new Map();
@@ -134,7 +175,7 @@ async function fetchAllContacts(pageLimit = 100, maxPages = 500) {
 async function fetchCustomFieldMap() {
   const { token, locationId } = getCredentials();
   const url = `https://services.leadconnectorhq.com/locations/${locationId}/customFields`;
-  const res = await fetch(url, {
+  const { res, text } = await fetchReadWithRetry(url, {
     headers: {
       Authorization: `Bearer ${token}`,
       Version: '2021-07-28',
@@ -142,10 +183,10 @@ async function fetchCustomFieldMap() {
     },
   });
   if (!res.ok) {
-    const text = await res.text();
     throw new Error(`GHL customFields failed (${res.status}): ${text.slice(0, 300)}`);
   }
-  const data = await res.json();
+  let data = {};
+  try { data = JSON.parse(text); } catch { /* noop */ }
   const list = data.customFields || data.customField || data.data || [];
   const map = {};
   for (const f of list) {
@@ -234,10 +275,14 @@ async function searchContactsByName(name, company) {
 // companyName, address1, city, state, postalCode, website, tags, source, assignedTo.
 async function createContact(fields) {
   const { locationId } = getCredentials();
+  const payload = { ...fields };
+  if (payload.assignedTo && !looksLikeGhlId(payload.assignedTo)) {
+    payload.assignedTo = (await resolveUser(payload.assignedTo)).id;
+  }
   const res = await fetch(`${GHL_BASE}/contacts/`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ locationId, ...fields }),
+    body: JSON.stringify({ locationId, ...payload }),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`GHL create contact failed (${res.status}): ${text.slice(0, 400)}`);
@@ -305,6 +350,9 @@ const STANDARD_CONTACT_FIELDS = {
   postalcode: 'postalCode', zip: 'postalCode', zipcode: 'postalCode',
   website: 'website', source: 'source', tags: 'tags',
   assignedto: 'assignedTo', timezone: 'timezone', dnd: 'dnd',
+  // Every phrasing a person uses for the contact owner.
+  owner: 'assignedTo', assignedowner: 'assignedTo', assigneduser: 'assignedTo',
+  contactowner: 'assignedTo', assignedtouser: 'assignedTo', assignee: 'assignedTo',
 };
 const CANONICAL_CONTACT_FIELDS = new Set(Object.values(STANDARD_CONTACT_FIELDS));
 
@@ -316,6 +364,75 @@ async function getCustomFieldMapCached() {
   _cfCache = await fetchCustomFieldMap();
   _cfCacheTime = now;
   return _cfCache;
+}
+
+// --- Owner (assignedTo) resolution ---
+// assignedTo must be a GHL user id. A human always says "assign it to Kimberly",
+// and GHL accepts a bad value silently on some routes, so an unresolved name is
+// the classic "the assistant said it did it but nothing changed" failure. Names
+// are resolved to ids here, and anything unresolvable throws loudly instead.
+
+let _usersCache = null;
+let _usersCacheTime = 0;
+async function listUsersCached() {
+  const now = Date.now();
+  if (_usersCache && now - _usersCacheTime < 60000) return _usersCache;
+  _usersCache = await listUsers();
+  _usersCacheTime = now;
+  return _usersCache;
+}
+
+function userLabel(u) {
+  return `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.name || u.email || u.id;
+}
+
+// GHL ids are long opaque alphanumeric strings; a person's name never is.
+function looksLikeGhlId(value) {
+  return /^[A-Za-z0-9]{20,}$/.test(String(value || '').trim());
+}
+
+// Accent/case-insensitive compare so "Kimberly Acuna" matches "Kimberly Acuña".
+function foldName(s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+// Resolve a user name/email/id to { id, name, email }. Throws a message listing
+// the real options when the name is unknown or matches several users.
+async function resolveUser(nameOrEmailOrId) {
+  const raw = String(nameOrEmailOrId || '').trim();
+  if (!raw) throw new Error('No user given to assign to.');
+  const users = await listUsersCached();
+
+  const byId = users.find(u => u.id === raw);
+  if (byId) return { id: byId.id, name: userLabel(byId), email: byId.email || '' };
+
+  const needle = foldName(raw);
+  const email = users.find(u => String(u.email || '').toLowerCase() === raw.toLowerCase());
+  if (email) return { id: email.id, name: userLabel(email), email: email.email || '' };
+
+  // Most specific match wins: full name, then first/last name, then prefix.
+  const rank = [
+    u => foldName(userLabel(u)) === needle,
+    u => foldName(u.firstName) === needle || foldName(u.lastName) === needle,
+    u => foldName(userLabel(u)).startsWith(needle) || foldName(u.email).startsWith(needle),
+    u => foldName(userLabel(u)).includes(needle),
+  ];
+  for (const test of rank) {
+    const hits = users.filter(test);
+    if (hits.length === 1) {
+      return { id: hits[0].id, name: userLabel(hits[0]), email: hits[0].email || '' };
+    }
+    if (hits.length > 1) {
+      throw new Error(`"${raw}" matches ${hits.length} users (${hits.map(userLabel).join(', ')}). Ask which one, then pass the exact full name or user id.`);
+    }
+  }
+
+  if (looksLikeGhlId(raw)) {
+    throw new Error(`No user with id "${raw}" exists in this location.`);
+  }
+  throw new Error(`No GoHighLevel user matches "${raw}". Users in this location: ${users.map(userLabel).join(', ')}.`);
 }
 
 // Split a loose {key: value} object into the GHL contact payload, routing any
@@ -349,6 +466,9 @@ async function normalizeContactFields(fields) {
     throw new Error(`Unknown contact field "${rawKey}". Use list_custom_fields to find valid custom fields — or this may belong on an opportunity, not a contact.`);
   }
   if (custom.length) out.customFields = custom;
+  if (out.assignedTo != null && out.assignedTo !== '' && !looksLikeGhlId(out.assignedTo)) {
+    out.assignedTo = (await resolveUser(out.assignedTo)).id;
+  }
   return out;
 }
 
@@ -435,8 +555,7 @@ async function listPipelines() {
 // List location users (id + name + email).
 async function listUsers() {
   const { locationId } = getCredentials();
-  const res = await fetch(`${GHL_BASE}/users/?locationId=${locationId}`, { headers: authHeaders() });
-  const text = await res.text();
+  const { res, text } = await fetchReadWithRetry(`${GHL_BASE}/users/?locationId=${locationId}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`GHL users failed (${res.status}): ${text.slice(0, 300)}`);
   let data = {};
   try { data = JSON.parse(text); } catch { /* noop */ }
@@ -678,6 +797,12 @@ module.exports = {
   searchPage,
   searchContactsByTagPage,
   searchContacts,
+  countContacts,
+  searchFilterPage,
+  tagFilters,
+  resolveUser,
+  looksLikeGhlId,
+  normalizeContactFields,
   searchContactsByEmail,
   searchContactsByPhone,
   searchContactsByName,

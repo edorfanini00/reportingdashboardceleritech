@@ -4,6 +4,103 @@
 // otherwise they return a preview so the assistant can ask the user to confirm.
 
 const ghl = require('./ghl-client');
+const { validateJob, countTargets } = require('./bulk');
+
+const BULK_TOOL_OPS = {
+  bulk_update_contacts: () => 'update_contact',
+  bulk_tag_contacts: input => (input.mode === 'remove' ? 'remove_tags' : 'add_tags'),
+};
+
+// Vet a bulk job BEFORE it is previewed or queued.
+//
+// Everything that could make a bulk job silently do nothing is caught here,
+// while the assistant is still talking to the user:
+//   - an owner name that matches no GoHighLevel user
+//   - a field that exists on neither the contact nor its custom fields
+//   - an audience that resolves to 0 contacts, or to a count that disagrees
+//     with what the user asked for (i.e. a wrong Smart List filter guess)
+// A rejected job returns { error }, so the assistant has to report the problem
+// instead of claiming the work is done.
+async function vetBulkJob(op, input) {
+  const { fields, tags, tag, allTags, filters, query, expectedTotal } = input;
+  const ids = Array.isArray(input.contactIds) && input.contactIds.length
+    ? [...new Set(input.contactIds.filter(Boolean))]
+    : null;
+  const hasFilters = Array.isArray(filters) && filters.length;
+  if (!ids && !tag && !hasFilters && !query) {
+    return { error: 'No audience given. Pass contactIds, tag, or filters (verify the filters with count_contacts first).' };
+  }
+
+  // Payload preflight: resolves "Kimberly" to a user id, rejects bad fields.
+  let validated;
+  try {
+    validated = await validateJob(op, { fields, tags });
+  } catch (err) {
+    return { error: String((err && err.message) || err) };
+  }
+
+  // Audience preflight, so the assistant always states the real number.
+  let total = ids ? ids.length : null;
+  if (total == null) {
+    try {
+      total = await countTargets({ tag, filters: hasFilters ? filters : null, query });
+    } catch { total = null; }
+  }
+  if (total === 0) {
+    return { error: 'That audience matched 0 contacts, so nothing was queued. Re-check the tag/filters with count_contacts and tell the user.' };
+  }
+  if (expectedTotal != null && total != null && Number(expectedTotal) !== total) {
+    return {
+      error: `Audience mismatch: these filters match ${total} contacts but the user expects ${expectedTotal}. Nothing was queued. Do NOT guess — ask the user for the exact Smart List filters, or ask them to tag the list in GoHighLevel (open the Smart List → select all → Add Tag) so it can be targeted by that tag.`,
+      total,
+      expectedTotal,
+    };
+  }
+
+  return {
+    total,
+    notes: validated.notes || [],
+    // Job spec held by the dashboard, which resolves targets and processes them
+    // one by one with per-contact verification — no database needed.
+    job: {
+      op,
+      fields: op === 'update_contact' ? validated.fields : null,
+      tags: op === 'update_contact' ? null : validated.tags,
+      tag: tag || null,
+      allTags: allTags || null,
+      filters: hasFilters ? filters : null,
+      query: query || null,
+      contactIds: ids,
+      total,
+    },
+  };
+}
+
+function describeBulkOp(op, input, vetted) {
+  if (op === 'update_contact') {
+    const pairs = Object.entries(input.fields || {}).map(([k, v]) => `${k} = ${v}`).join(', ');
+    return `set ${pairs}`;
+  }
+  const list = (vetted.job.tags || []).join(', ');
+  return `${op === 'remove_tags' ? 'remove' : 'add'} tag(s) ${list}`;
+}
+
+async function buildBulkJob(op, input) {
+  const vetted = await vetBulkJob(op, input);
+  if (vetted.error) return vetted;
+  const { total, notes } = vetted;
+  return {
+    ok: true,
+    bulk: true,
+    op,
+    total,
+    bulkJob: vetted.job,
+    notes: notes.length ? notes : undefined,
+    message: `Queued: ${describeBulkOp(op, input, vetted)} on ${total == null ? 'the matching' : total} contacts.`
+      + (notes.length ? ` (${notes.join('; ')})` : '')
+      + ' The dashboard is processing them one by one (verified) with live progress below.',
+  };
+}
 
 function contactSummary(c) {
   if (!c) return null;
@@ -79,6 +176,52 @@ const tools = [
         sample,
         note: results.length >= 200 ? 'Sample only (first 200). For bulk actions pass tag directly to bulk_update_contacts — do not pass these ids.' : undefined,
       };
+    },
+  },
+  {
+    name: 'count_contacts',
+    write: false,
+    description: `Count EXACTLY how many contacts match a set of advanced filters, plus a small sample. This is the tool that reproduces a GoHighLevel Smart List: Smart Lists are not exposed by the API, but they are just saved filters, so pass the same filters here and compare the total to the count the user sees in the UI. ALWAYS use this to verify an audience before running a bulk write on it.
+Filters are ANDed. Wrap in {"group":"OR","filters":[...]} for OR logic.
+Fields: id, contactName, firstName, lastName, email, phone, address, city, state, country (2-letter code, e.g. "VE"), postalCode, businessName, companyName, source, tags, assignedTo (user id), dnd, dateAdded, dateUpdated, followers, pipelineId, customFields.{fieldId} (get ids from list_custom_fields).
+Operators: eq, not_eq, contains (min 3 chars), not_contains, exists, not_exists, range ({"gte":..,"lte":..}).
+Example: [{"field":"country","operator":"eq","value":"VE"},{"field":"assignedTo","operator":"not_exists"}]`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        filters: { type: 'array', items: { type: 'object' }, description: 'GoHighLevel advanced search filters (ANDed).' },
+        tag: { type: 'string', description: 'Shortcut for a single tag filter.' },
+        query: { type: 'string', description: 'Optional free-text search across searchable fields.' },
+      },
+    },
+    async run({ filters, tag, query }) {
+      const f = Array.isArray(filters) && filters.length
+        ? filters
+        : (tag ? ghl.tagFilters(tag) : null);
+      const total = await ghl.countContacts({ filters: f, query });
+      const { batch } = await ghl.searchFilterPage({ filters: f, query, page: 1, pageLimit: 5 });
+      return {
+        total,
+        filters: f,
+        sample: batch.map(c => {
+          const s = contactSummary(c);
+          return { id: s.id, name: s.name, email: s.email, company: s.company, assignedTo: s.assignedTo };
+        }),
+        note: 'If this total does not match the count the user gave you, the filters are wrong — do NOT write to this audience. Ask the user for the exact Smart List filters instead.',
+      };
+    },
+  },
+  {
+    name: 'find_user',
+    write: false,
+    description: 'Resolve a person\'s name (or email) to a GoHighLevel user id — required before assigning an owner. Returns the matched user, or an error listing the real users when the name is unknown or ambiguous.',
+    input_schema: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'Name, email, or user id, e.g. "kimberly"' } },
+      required: ['name'],
+    },
+    async run({ name }) {
+      return ghl.resolveUser(name);
     },
   },
   {
@@ -258,40 +401,32 @@ const tools = [
   {
     name: 'bulk_update_contacts',
     write: true,
-    description: 'Update the SAME fields on MANY contacts at once (e.g. set source for every contact with a tag). ALWAYS use this instead of calling update_contact repeatedly when changing more than ~3 contacts — it processes in the background in chunks so it never times out, no matter how many contacts. Provide tag (+ optional allTags) for the dashboard to resolve targets in the background; only pass contactIds for a short explicit list (under ~20). Do NOT call search_by_tag first. Set confirmed=true ONLY after the user approves.',
+    description: `Update the SAME fields on MANY contacts at once (e.g. set the owner or source for a whole audience). ALWAYS use this instead of calling update_contact repeatedly when changing more than ~3 contacts — it processes in the background in chunks so it never times out, no matter how many contacts.
+Targeting (pick ONE): tag (+ optional allTags), filters (advanced GoHighLevel filters — this is how you target a Smart List audience, same syntax as count_contacts), or contactIds for a short explicit list (under ~20). Do NOT call search_by_tag first; the dashboard resolves targets in the background.
+To set the owner, pass {"assignedTo":"Kimberly"} — a name is resolved to the real user id and the job is REJECTED if the name is unknown, so it can never silently do nothing.
+Set confirmed=true ONLY after the user approves.`,
     input_schema: {
       type: 'object',
       properties: {
-        fields: { type: 'object', description: 'Fields to set on every matched contact, e.g. {"source":"Facebook - Food manufacturer"}' },
+        fields: { type: 'object', description: 'Fields to set on every matched contact, e.g. {"source":"Facebook - Food manufacturer"} or {"assignedTo":"Kimberly"}' },
         contactIds: { type: 'array', items: { type: 'string' }, description: 'Explicit contact ids to update (use this if you already have the list).' },
         tag: { type: 'string', description: 'Update all contacts that have this tag.' },
         allTags: { type: 'array', items: { type: 'string' }, description: 'Require ALL of these tags (AND filter). Include the primary tag here too.' },
+        filters: { type: 'array', items: { type: 'object' }, description: 'Advanced GoHighLevel search filters defining the audience (verify with count_contacts first).' },
+        query: { type: 'string', description: 'Optional free-text audience match.' },
+        expectedTotal: { type: 'number', description: 'The count the user expects (e.g. 744). The job aborts if the audience does not match, so a wrong filter can never update the wrong people.' },
         confirmed: { type: 'boolean', description: 'Must be true to actually queue the job.' },
       },
       required: ['fields'],
     },
-    async run({ fields, contactIds, tag, allTags }) {
-      const ids = Array.isArray(contactIds) && contactIds.length ? [...new Set(contactIds.filter(Boolean))] : null;
-      const total = ids ? ids.length : null;
-      const count = total == null ? 'the matching' : total;
-      return {
-        ok: true,
-        bulk: true,
-        op: 'update_contact',
-        total,
-        // Job spec held by the dashboard, which resolves targets and processes
-        // them one by one with per-contact verification — no database needed.
-        bulkJob: { op: 'update_contact', fields: fields || null, tags: null, tag: tag || null, allTags: allTags || null, contactIds: ids, total },
-        message: total === 0
-          ? 'No matching contacts found, nothing to update.'
-          : `Queued an update for ${count} contacts. The dashboard is now processing them one by one (verified) with live progress below.`,
-      };
+    async run(input) {
+      return buildBulkJob('update_contact', input);
     },
   },
   {
     name: 'bulk_tag_contacts',
     write: true,
-    description: 'Add or remove the SAME tag(s) on MANY contacts at once. Use instead of add_tags/remove_tags when affecting more than ~3 contacts — runs in the background in chunks so it never times out. mode is "add" or "remove". Provide EITHER contactIds OR tag (+ optional allTags filter). Set confirmed=true ONLY after the user approves.',
+    description: 'Add or remove the SAME tag(s) on MANY contacts at once. Use instead of add_tags/remove_tags when affecting more than ~3 contacts — runs in the background in chunks so it never times out. mode is "add" or "remove". Target with contactIds, tag (+ optional allTags), or advanced filters. Set confirmed=true ONLY after the user approves.',
     input_schema: {
       type: 'object',
       properties: {
@@ -300,25 +435,15 @@ const tools = [
         contactIds: { type: 'array', items: { type: 'string' }, description: 'Explicit contact ids to act on.' },
         tag: { type: 'string', description: 'Match all contacts that have this tag.' },
         allTags: { type: 'array', items: { type: 'string' }, description: 'Require ALL of these tags (AND filter).' },
+        filters: { type: 'array', items: { type: 'object' }, description: 'Advanced GoHighLevel search filters defining the audience.' },
+        query: { type: 'string', description: 'Optional free-text audience match.' },
+        expectedTotal: { type: 'number', description: 'The count the user expects; the job aborts if the audience does not match.' },
         confirmed: { type: 'boolean' },
       },
       required: ['mode', 'tags'],
     },
-    async run({ mode, tags, contactIds, tag, allTags }) {
-      const op = mode === 'remove' ? 'remove_tags' : 'add_tags';
-      const ids = Array.isArray(contactIds) && contactIds.length ? [...new Set(contactIds.filter(Boolean))] : null;
-      const total = ids ? ids.length : null;
-      const count = total == null ? 'the matching' : total;
-      return {
-        ok: true,
-        bulk: true,
-        op,
-        total,
-        bulkJob: { op, fields: null, tags: tags || null, tag: tag || null, allTags: allTags || null, contactIds: ids, total },
-        message: total === 0
-          ? 'No matching contacts found, nothing to change.'
-          : `Queued ${mode === 'remove' ? 'removal' : 'addition'} of tag(s) on ${count} contacts. The dashboard is now processing them one by one (verified) with live progress.`,
-      };
+    async run(input) {
+      return buildBulkJob(input.mode === 'remove' ? 'remove_tags' : 'add_tags', input);
     },
   },
   {
@@ -634,6 +759,26 @@ async function runTool(name, input) {
   if (!tool) return { error: `Unknown tool: ${name}` };
   try {
     if (tool.write && input.confirmed !== true) {
+      // A bulk preview is vetted exactly like a real run, so the user is asked
+      // to confirm the true audience size and the resolved owner — and an
+      // impossible job is reported as an error instead of being confirmed.
+      if (BULK_TOOL_OPS[name]) {
+        const op = BULK_TOOL_OPS[name](input);
+        const vetted = await vetBulkJob(op, input);
+        if (vetted.error) return { error: vetted.error };
+        return {
+          preview: true,
+          message: `CONFIRMATION REQUIRED. Not executed yet. This will ${describeBulkOp(op, input, vetted)} on ${vetted.total == null ? 'the matching' : vetted.total} contacts.`
+            + (vetted.notes.length ? ` ${vetted.notes.join('; ')}.` : '')
+            + ` State that exact count to the user and ask them to confirm; once they say yes, call ${name} again with confirmed=true.`,
+          total: vetted.total,
+          notes: vetted.notes.length ? vetted.notes : undefined,
+          // Vetted spec so the dashboard can run the job the moment the user
+          // confirms, without re-deriving it from the raw tool input.
+          previewJob: vetted.job,
+          proposed: input,
+        };
+      }
       return {
         preview: true,
         message: `CONFIRMATION REQUIRED. This is a write action (${name}) and was NOT executed. Show the user exactly what will change and ask them to confirm. Once they say yes, call ${name} again with confirmed=true.`,
@@ -646,4 +791,4 @@ async function runTool(name, input) {
   }
 }
 
-module.exports = { anthropicTools, runTool, tools };
+module.exports = { anthropicTools, runTool, tools, BULK_TOOL_OPS };

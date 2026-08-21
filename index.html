@@ -414,8 +414,8 @@ ACTIVE PIPELINE
 <input id="bulkTags" placeholder="Tag(s) to add/remove — comma-separated" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-orange-400" />
 </div>
 <div id="bulkFieldWrap" class="hidden grid grid-cols-2 gap-2">
-<input id="bulkFieldName" placeholder="Field (e.g. source)" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-orange-400" />
-<input id="bulkFieldValue" placeholder="Value (e.g. Facebook)" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-orange-400" />
+<input id="bulkFieldName" placeholder="Field (e.g. source, assignedTo)" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-orange-400" />
+<input id="bulkFieldValue" placeholder="Value (e.g. Facebook, Kimberly)" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-700 outline-none focus:border-orange-400" />
 </div>
 <button type="button" onclick="runQuickBulk()" id="bulkRunBtn" class="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-[12px] font-bold rounded-lg py-2.5 transition-colors">Run &amp; show progress</button>
 <p class="text-[10px] text-slate-400">This runs immediately against GoHighLevel and shows a live progress bar below. It does not use the AI model.</p>
@@ -864,6 +864,17 @@ async function runQuickBulk() {
 /* ---------- Detect pasted contact IDs in chat and run deterministically (no AI) ---------- */
 let pendingParsedBulk = null;
 function splitTagList(s) { return String(cleanBulkVal(s)).split(',').map(x => x.trim()).filter(Boolean); }
+// Drop the connector words between a verb and its value, so "assign these
+// contacts to kimberly" yields "kimberly" and not "these contacts to kimberly".
+function stripLeadFiller(v) {
+  let out = String(v || '').trim();
+  let prev;
+  do {
+    prev = out;
+    out = out.replace(/^[\s,:=]*\b(these|those|them|they|all|the|of|contacts?|leads?|people|to|as|is|are|should|must|need|needs|be|now|each|one|every|owner|assigned)\b/, '').trim();
+  } while (out !== prev);
+  return out;
+}
 // Strip trailing filler/connector words the action regex may grab
 // (e.g. "Facebook for" / "vip to these contacts" -> "Facebook" / "vip").
 function cleanBulkVal(v) {
@@ -896,6 +907,16 @@ function parseBulkFromText(text) {
   if (/\bsource\b/.test(instr)) {
     m = instr.match(/source\s*(?:to|=|:|as)?\s*["']?(.+?)["']?$/);
     if (m && m[1]) { const src = cleanBulkVal(m[1]); if (src) return { op: 'update_contact', contactIds: ids, fields: { source: src } }; }
+  }
+  // "assign these to kimberly" / "assigned owner should be kimberly acuna"
+  if (/\b(owner|assign(ed)?)\b/.test(instr)) {
+    m = instr.match(/\b(?:assigned owner|assigned to|owner|assign(?:ed)?)\b(.*)$/);
+    if (m && m[1]) {
+      const who = cleanBulkVal(stripLeadFiller(m[1]));
+      if (/^[a-z][a-z.'\- ]{1,40}$/.test(who)) {
+        return { op: 'update_contact', contactIds: ids, fields: { assignedTo: who } };
+      }
+    }
   }
   return { op: null, contactIds: ids };
 }
@@ -963,8 +984,15 @@ async function confirmParsedBulk(btn) {
   }
 }
 
+// Matches the server's rule: an opening affirmative plus nothing but filler,
+// so "yes do it" / "ok go ahead" confirm a pending job just like a bare "yes".
 function isConfirmMessage(text) {
-  return /^(yes|y|yeah|yep|confirm|confirmed|go ahead|do it|proceed|ok|okay|sure|approve|approved)\.?!?$/i.test(String(text || '').trim());
+  const cleaned = String(text || '').toLowerCase().replace(/[^a-z' ]+/g, ' ').trim();
+  if (!cleaned) return false;
+  const words = cleaned.split(/\s+/);
+  if (words.length > 10) return false;
+  if (!/^(yes|y|yeah|yep|yup|ya|sure|ok|okay|k|confirm|confirmed|approve|approved|proceed|go|do|run|start|send)$/.test(words[0])) return false;
+  return words.every(w => /^(yes|y|yeah|yep|yup|ya|sure|ok|okay|k|confirm|confirmed|confirming|approve|approved|proceed|go|ahead|do|it|this|that|please|run|start|send|now|them|all|of|for|and|thanks|thank|you|lets|let's)$/.test(w));
 }
 
 // Turns handled locally (e.g. bulk confirm bypasses /api/agent) are recorded
@@ -984,22 +1012,29 @@ function capturePendingBulk(actions) {
   // in one turn (e.g. standardizing many source values). Confirming runs all.
   const found = actions
     .filter(a => a.preview && (a.tool === 'bulk_update_contacts' || a.tool === 'bulk_tag_contacts') && a.input)
-    .map(a => ({ tool: a.tool, input: a.input }));
+    .map(a => ({ tool: a.tool, input: a.input, job: a.job || null, total: a.total != null ? a.total : null }));
   if (found.length) pendingBulkConfirm = found;
 }
 
 // Build the client-held job spec for a confirmed AI bulk action. No server
 // call needed — the job runs via runBulkJob (resolve + verified chunks).
 function queueBulkDirect(pending) {
+  // The server already vetted this job when it previewed it (owner name
+  // resolved to a user id, audience counted), so run that spec verbatim.
+  if (pending.job && pending.job.op) {
+    return { ok: true, bulkJob: pending.job };
+  }
   const input = pending.input || {};
   const ids = Array.isArray(input.contactIds) && input.contactIds.length ? input.contactIds : null;
   const job = {
     tag: input.tag || null,
     allTags: input.allTags || null,
+    filters: Array.isArray(input.filters) && input.filters.length ? input.filters : null,
+    query: input.query || null,
     contactIds: ids,
     fields: null,
     tags: null,
-    total: ids ? ids.length : null,
+    total: ids ? ids.length : (pending.total != null ? pending.total : null),
   };
   if (pending.tool === 'bulk_update_contacts') {
     job.op = 'update_contact';
@@ -1008,7 +1043,111 @@ function queueBulkDirect(pending) {
     job.op = input.mode === 'remove' ? 'remove_tags' : 'add_tags';
     job.tags = input.tags;
   }
-  return { ok: true, message: 'Starting now — processing one by one with live progress below.', bulkJob: job };
+  return { ok: true, bulkJob: job };
+}
+
+// Typing "yes" is one more place a job can stall, so a previewed bulk action
+// also gets a button. Same confirmation, one click, no wording to get wrong.
+function offerBulkRunButtons(pendingList) {
+  const box = document.getElementById('chatMessages');
+  if (!box || !pendingList || !pendingList.length) return;
+  clearBulkRunPrompt();
+  const label = pendingList.length > 1
+    ? 'Run all ' + pendingList.length + ' jobs'
+    : 'Run it';
+  const wrap = document.createElement('div');
+  wrap.className = 'flex justify-start';
+  wrap.id = 'bulkRunPrompt';
+  wrap.innerHTML = '<div class="bg-white border border-slate-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm max-w-[90%]">'
+    + '<p class="text-[11px] text-slate-400 mb-2">Nothing has changed yet — this runs against GoHighLevel with a live progress bar.</p>'
+    + '<div class="flex gap-2">'
+    + '<button onclick="runPendingBulk(this)" class="bg-orange-500 hover:bg-orange-600 text-white text-[12px] font-bold rounded-lg px-3 py-1.5 transition-colors">' + escapeHtml(label) + '</button>'
+    + '<button onclick="cancelPendingBulk(this)" class="bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-bold rounded-lg px-3 py-1.5 transition-colors">Cancel</button>'
+    + '</div></div>';
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+}
+
+function clearBulkRunPrompt() {
+  const el = document.getElementById('bulkRunPrompt');
+  if (el) el.remove();
+}
+
+function cancelPendingBulk() {
+  pendingBulkConfirm = null;
+  clearBulkRunPrompt();
+  const msg = 'Cancelled. Nothing was changed.';
+  addChatBubble('assistant', msg);
+  chatHistory.push({ role: 'assistant', content: msg });
+  syncChatMemory([{ role: 'user', content: 'cancel' }, { role: 'assistant', content: msg }]);
+}
+
+async function runPendingBulk() {
+  if (!pendingBulkConfirm || chatBusy) return;
+  clearBulkRunPrompt();
+  await startPendingBulk('yes');
+}
+
+// Runs every pending bulk job to completion, then reports what actually
+// happened back into the chat (and into the assistant's memory) so the
+// conversation never claims more than the jobs really did.
+async function startPendingBulk(userText) {
+  if (!pendingBulkConfirm || chatBusy) return;
+  chatBusy = true;
+  document.getElementById('chatSendBtn').disabled = true;
+  addChatBubble('user', userText);
+  chatHistory.push({ role: 'user', content: userText });
+  renderSuggestions();
+  const pendingList = Array.isArray(pendingBulkConfirm) ? pendingBulkConfirm : [pendingBulkConfirm];
+  pendingBulkConfirm = null;
+  try {
+    const replyMsg = pendingList.length > 1
+      ? 'Starting ' + pendingList.length + ' bulk jobs — running them one after another below.'
+      : 'Starting now — processing one by one with live progress below.';
+    addChatBubble('assistant', replyMsg);
+    chatHistory.push({ role: 'assistant', content: replyMsg });
+    const outcomes = [];
+    for (const pending of pendingList) {
+      const data = queueBulkDirect(pending);
+      if (!data.bulkJob) continue;
+      outcomes.push(await runBulkJob(data.bulkJob));
+    }
+    const summary = summarizeBulkOutcomes(outcomes);
+    if (summary) {
+      // Failures already announced themselves with their own message; don't
+      // repeat them, but always keep the outcome in the assistant's memory.
+      const alreadyShown = outcomes.some(o => o && (o.failed || o.error));
+      if (!alreadyShown) addChatBubble('assistant', summary);
+      chatHistory.push({ role: 'assistant', content: summary });
+    }
+    syncChatMemory([
+      { role: 'user', content: userText },
+      { role: 'assistant', content: summary ? replyMsg + '\n' + summary : replyMsg },
+    ]);
+  } catch (err) {
+    addChatBubble('assistant', '⚠️ Could not start bulk job: ' + err.message);
+  } finally {
+    chatBusy = false;
+    document.getElementById('chatSendBtn').disabled = false;
+    const inp = document.getElementById('chatInput');
+    if (inp) inp.focus();
+  }
+}
+
+// One plain-language line per job describing the real result, recorded in the
+// conversation so a later "did that work?" is answered from facts.
+const BULK_DONE_VERB = { update_contact: 'updated', add_tags: 'tagged', remove_tags: 'untagged' };
+
+function summarizeBulkOutcomes(outcomes) {
+  const real = (outcomes || []).filter(Boolean);
+  if (!real.length) return '';
+  return real.map(o => {
+    const verb = BULK_DONE_VERB[o.op] || 'updated';
+    if (o.error) return '⚠️ ' + o.error;
+    if (!o.total) return 'No matching contacts, so nothing was changed.';
+    if (o.failed) return '⚠️ ' + o.done + ' of ' + o.total + ' contacts ' + verb + '; ' + o.failed + ' failed (' + (o.firstError || 'unknown error') + ').';
+    return '✓ Finished: all ' + o.done + ' contacts ' + verb + ' and verified.';
+  }).join('\n');
 }
 let chatId = null;
 let chatBusy = false;
@@ -1094,6 +1233,7 @@ function resetChat() {
   chatHistory = [];
   chatId = null;
   pendingBulkConfirm = null;
+  clearBulkRunPrompt();
   const box = document.getElementById('chatMessages');
   if (box) box.innerHTML = '';
   renderSuggestions();
@@ -1149,9 +1289,13 @@ function addActionLog(actions) {
   const wrap = document.createElement('div');
   wrap.className = 'flex justify-start';
   const items = actions.map(a => {
-    const did = a.executed ? '✓' : (a.preview ? '⏸' : '•');
-    const color = a.executed ? 'text-emerald-600' : 'text-slate-400';
-    return '<div class="' + color + '">' + did + ' ' + escapeHtml(a.tool) + (a.preview ? ' (awaiting confirmation)' : '') + '</div>';
+    const failed = !!a.error;
+    const did = failed ? '✕' : (a.executed ? '✓' : (a.preview ? '⏸' : '•'));
+    const color = failed ? 'text-rose-600' : (a.executed ? 'text-emerald-600' : 'text-slate-400');
+    let suffix = '';
+    if (failed) suffix = ' — ' + escapeHtml(String(a.error).slice(0, 200));
+    else if (a.preview) suffix = ' (awaiting confirmation)';
+    return '<div class="' + color + '">' + did + ' ' + escapeHtml(a.tool) + suffix + '</div>';
   }).join('');
   wrap.innerHTML = '<div class="max-w-[85%] bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[11px] font-mono text-slate-500">' + items + '</div>';
   box.appendChild(wrap);
@@ -1173,6 +1317,15 @@ function addFallbackNotice(requested, used) {
 }
 
 const BULK_OP_LABEL = { update_contact: 'Updating contacts', add_tags: 'Adding tags', remove_tags: 'Removing tags' };
+
+// Bulk chunks are driven from this page, so closing it abandons the rest.
+let bulkJobsRunning = 0;
+window.addEventListener('beforeunload', function (e) {
+  if (!bulkJobsRunning) return undefined;
+  e.preventDefault();
+  e.returnValue = 'A bulk update is still running. Leaving now stops it partway through.';
+  return e.returnValue;
+});
 
 function addProgressBar(opLabel, total) {
   const box = document.getElementById('chatMessages');
@@ -1217,37 +1370,79 @@ async function postBulk(body) {
   try { return JSON.parse(raw); } catch { throw new Error('Server error ' + r.status); }
 }
 
-// Runs a client-held bulk job spec: {op, tag, allTags, contactIds, fields, tags}.
-// Phase 1 resolves target ids page by page; phase 2 processes small chunks,
-// one contact at a time server-side (rate-limit safe), verifying every single
-// contact and automatically retrying failures once. No database involved, so
-// this works regardless of KV quota.
+// Runs a client-held bulk job spec:
+// {op, tag, allTags, filters, query, contactIds, fields, tags}.
+// Phase 0 preflights the payload; phase 1 resolves target ids page by page;
+// phase 2 processes small chunks, one contact at a time server-side
+// (rate-limit safe), verifying every single contact and automatically retrying
+// failures once. No database involved, so this works regardless of KV quota.
+// Returns {total, done, failed, firstError} — or {error} if it never started.
 async function runBulkJob(job) {
   const opLabel = BULK_OP_LABEL[job.op] || 'Processing';
   const bar = addProgressBar(opLabel, job.total != null ? job.total : (job.contactIds ? job.contactIds.length : null));
 
+  // Phase 0: preflight the payload once. Catches an unknown owner name or a
+  // non-existent field here instead of failing on every contact in the list.
+  let v;
+  try { v = await postBulk({ action: 'validate', op: job.op, fields: job.fields, tags: job.tags }); }
+  catch (err) { v = { ok: false, error: 'Could not reach the server — ' + err.message }; }
+  if (!v.ok) {
+    updateProgressBar(bar, 0, 0, v.error || 'Invalid job — nothing was changed.', true);
+    return { error: v.error || 'The job was rejected before it started, so nothing was changed.' };
+  }
+  if (v.fields) job.fields = v.fields;
+  if (v.tags) job.tags = v.tags;
+  if (v.notes && v.notes.length) updateProgressBar(bar, 0, null, v.notes.join('; '));
+
   // Phase 1: resolve target ids.
+  const hasFilters = Array.isArray(job.filters) && job.filters.length;
   let ids = Array.isArray(job.contactIds) && job.contactIds.length ? [...new Set(job.contactIds)] : null;
   if (!ids) {
-    if (!job.tag) { updateProgressBar(bar, 0, 0, 'Nothing to do — no tag or contact list given.', true); return; }
+    if (!job.tag && !hasFilters && !job.query) {
+      updateProgressBar(bar, 0, 0, 'Nothing to do — no tag, filters, or contact list given.', true);
+      return { error: 'No audience was given, so nothing was changed.' };
+    }
     ids = [];
-    for (let page = 1; page <= 100; page++) {
+    for (let page = 1; page <= 200; page++) {
       updateProgressBar(bar, 0, null, 'Finding contacts… ' + ids.length + ' found');
       let d;
-      try { d = await postBulk({ action: 'resolve', tag: job.tag, allTags: job.allTags, page: page }); }
-      catch (err) { updateProgressBar(bar, 0, null, 'Connection lost while finding contacts — ' + err.message, true); return; }
-      if (!d.ok) { updateProgressBar(bar, 0, null, d.error || 'Could not find the matching contacts.', true); return; }
+      try {
+        d = await postBulk({
+          action: 'resolve', page: page,
+          tag: job.tag, allTags: job.allTags,
+          filters: hasFilters ? job.filters : undefined,
+          query: job.query || undefined,
+        });
+      } catch (err) {
+        updateProgressBar(bar, 0, null, 'Connection lost while finding contacts — ' + err.message, true);
+        return { error: 'Lost the connection while finding contacts: ' + err.message };
+      }
+      if (!d.ok) {
+        updateProgressBar(bar, 0, null, d.error || 'Could not find the matching contacts.', true);
+        return { error: d.error || 'Could not find the matching contacts.' };
+      }
       ids.push.apply(ids, d.ids || []);
       if (d.done) break;
     }
     ids = [...new Set(ids)];
   }
   const total = ids.length;
-  if (!total) { updateProgressBar(bar, 0, 0, 'No matching contacts found.'); return; }
+  if (!total) {
+    updateProgressBar(bar, 0, 0, 'No matching contacts found.');
+    return { op: job.op, total: 0, done: 0, failed: 0 };
+  }
 
   // Phase 2: process in small chunks; every contact's result is verified.
   const CHUNK = 5;
   let processed = 0;
+  // Chunks are driven from this page, so leaving mid-run stops the job. Say so
+  // up front for anything long enough to matter, and block an accidental close.
+  const etaMin = Math.ceil((total * 0.7) / 60);
+  if (total > 60) {
+    addChatBubble('assistant', 'Working through **' + total + '** contacts — about **' + etaMin
+      + ' min**. Keep this tab open until the bar completes. If it does get interrupted, just ask me to run it again: re-running only re-applies the same change.');
+  }
+  bulkJobsRunning++;
   async function runPass(list, label) {
     const failures = [];
     for (let i = 0; i < list.length; i += CHUNK) {
@@ -1271,27 +1466,33 @@ async function runBulkJob(job) {
     return failures;
   }
 
-  updateProgressBar(bar, 0, total, 'Processing slowly (rate-limit safe)…');
-  let failures = await runPass(ids, 'Processing slowly (rate-limit safe)…');
+  let failures;
+  try {
+    updateProgressBar(bar, 0, total, 'Processing slowly (rate-limit safe)…');
+    failures = await runPass(ids, 'Processing slowly (rate-limit safe)…');
 
-  if (failures.length) {
-    updateProgressBar(bar, processed, total, 'Retrying ' + failures.length + ' failed contact(s)…');
-    await new Promise(r => setTimeout(r, 3000)); // let any rate-limit window pass
-    failures = await runPass(failures.map(f => f.id), 'Retrying failed contact(s)…');
+    if (failures.length) {
+      updateProgressBar(bar, processed, total, 'Retrying ' + failures.length + ' failed contact(s)…');
+      await new Promise(r => setTimeout(r, 3000)); // let any rate-limit window pass
+      failures = await runPass(failures.map(f => f.id), 'Retrying failed contact(s)…');
+    }
+  } finally {
+    bulkJobsRunning = Math.max(0, bulkJobsRunning - 1);
   }
 
   if (!failures.length) {
     updateProgressBar(bar, processed, total, '✓ All ' + total + ' done and verified.');
-  } else {
-    updateProgressBar(bar, processed, total, '✓ ' + processed + ' done, ' + failures.length + ' failed after retry.', true);
-    const first = failures[0];
-    const errMsg = first.error || 'unknown';
-    const is429 = /429|Too Many Requests/i.test(errMsg);
-    const hint = is429
-      ? 'GoHighLevel rate-limited some requests. Wait a minute and ask the assistant to retry — completed contacts are already saved.'
-      : 'This usually means a permissions/scope or field-format issue on the GoHighLevel side.';
-    addChatBubble('assistant', '⚠️ ' + failures.length + ' of ' + total + ' updates failed after a retry. First error: `' + errMsg + '` (contact ' + (first.id || '?') + '). ' + hint);
+    return { op: job.op, total: total, done: processed, failed: 0 };
   }
+  updateProgressBar(bar, processed, total, '✓ ' + processed + ' done, ' + failures.length + ' failed after retry.', true);
+  const first = failures[0];
+  const errMsg = first.error || 'unknown';
+  const is429 = /429|Too Many Requests/i.test(errMsg);
+  const hint = is429
+    ? 'GoHighLevel rate-limited some requests. Wait a minute and ask the assistant to retry — completed contacts are already saved.'
+    : 'This usually means a permissions/scope or field-format issue on the GoHighLevel side.';
+  addChatBubble('assistant', '⚠️ ' + failures.length + ' of ' + total + ' updates failed after a retry. First error: `' + errMsg + '` (contact ' + (first.id || '?') + '). ' + hint);
+  return { op: job.op, total: total, done: processed, failed: failures.length, firstError: errMsg };
 }
 
 function autoGrow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 128) + 'px'; }
@@ -1327,34 +1528,8 @@ async function sendChat(e) {
 
   // Confirm bulk locally — bypasses /api/agent so it never hits the serverless timeout.
   if (isConfirmMessage(text) && pendingBulkConfirm) {
-    chatBusy = true;
-    document.getElementById('chatSendBtn').disabled = true;
-    addChatBubble('user', text);
-    chatHistory.push({ role: 'user', content: text });
-    renderSuggestions();
-    addTyping();
-    const pendingList = Array.isArray(pendingBulkConfirm) ? pendingBulkConfirm : [pendingBulkConfirm];
-    pendingBulkConfirm = null;
-    try {
-      removeTyping();
-      const replyMsg = pendingList.length > 1
-        ? 'Starting ' + pendingList.length + ' bulk jobs — running them one after another below.'
-        : 'Starting now — processing one by one with live progress below.';
-      addChatBubble('assistant', replyMsg);
-      chatHistory.push({ role: 'assistant', content: replyMsg });
-      syncChatMemory([{ role: 'user', content: text }, { role: 'assistant', content: replyMsg }]);
-      for (const pending of pendingList) {
-        const data = queueBulkDirect(pending);
-        if (data.bulkJob && (data.bulkJob.total == null || data.bulkJob.total > 0)) await runBulkJob(data.bulkJob);
-      }
-    } catch (err) {
-      removeTyping();
-      addChatBubble('assistant', '⚠️ Could not start bulk job: ' + err.message);
-    } finally {
-      chatBusy = false;
-      document.getElementById('chatSendBtn').disabled = false;
-      inp.focus();
-    }
+    clearBulkRunPrompt();
+    await startPendingBulk(text);
     return false;
   }
 
@@ -1376,6 +1551,9 @@ async function postToAgent(text, isAuto) {
   // if the server-side conversation store expired or failed.
   const priorHistory = chatHistory.slice(-60);
   if (!isAuto) {
+    // A new instruction supersedes any un-run job, so retire its button.
+    clearBulkRunPrompt();
+    pendingBulkConfirm = null;
     addChatBubble('user', text);
     chatHistory.push({ role: 'user', content: text });
     renderSuggestions();
@@ -1442,7 +1620,18 @@ async function postToAgent(text, isAuto) {
     pendingChatState = null;
     addChatBubble('assistant', data.reply);
     chatHistory.push({ role: 'assistant', content: data.reply });
-    for (const job of bulkJobList) await runBulkJob(job);
+    // Offer the one-click run below the explanation, not above it.
+    if (pendingBulkConfirm) offerBulkRunButtons(pendingBulkConfirm);
+    if (bulkJobList.length) {
+      const outcomes = [];
+      for (const job of bulkJobList) outcomes.push(await runBulkJob(job));
+      const summary = summarizeBulkOutcomes(outcomes);
+      if (summary) {
+        if (!outcomes.some(o => o && (o.failed || o.error))) addChatBubble('assistant', summary);
+        chatHistory.push({ role: 'assistant', content: summary });
+        syncChatMemory([{ role: 'assistant', content: summary }]);
+      }
+    }
   } catch (err) {
     removeTyping();
     // "Failed to fetch" = the connection dropped (flaky network, VPN/proxy

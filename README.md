@@ -74,6 +74,7 @@ Open `http://localhost:3000`. API routes need Vercel dev (or linked env vars) fo
 | `/api/leads` | GET | Returns all stored GHL leads for the dashboard |
 | `/api/sync` | GET/POST | Bulk-imports tagged contacts from GoHighLevel |
 | `/api/agent` | POST | AI assistant: Claude agent that operates on GoHighLevel via tool use |
+| `/api/bulk` | POST | Drives bulk jobs: `validate`, `count`, `resolve`, `process` |
 
 ## AI Assistant (dashboard chat)
 
@@ -82,6 +83,42 @@ an Anthropic Claude agent can search, tag, update, and create contacts &
 opportunities in GoHighLevel via the API. **Write actions are confirmation-gated**:
 the agent always describes the change and waits for you to approve before it
 mutates anything (enforced server-side in `api/_lib/agent-tools.js`).
+
+### Bulk jobs: how "do this to all of them" works
+
+Bulk requests (set an owner or a source on hundreds of contacts, add/remove a tag
+in bulk) run as a job the dashboard drives in small verified chunks, so they
+never hit a serverless timeout. Before anything is written, the job is
+**preflighted**:
+
+- **Owner names are resolved to user ids.** GoHighLevel's API rejects
+  `assignedTo: "kimberly"` with a 404, so "assign these to Kimberly" is turned
+  into her real user id first. An unknown or ambiguous name aborts the job and
+  lists the actual users instead of failing on every contact.
+- **Unknown fields are rejected** up front rather than per contact.
+- **The audience is counted first.** If you say how many contacts there are
+  (e.g. "the list with 744"), the job only runs when the count matches exactly,
+  so a wrong filter can never update the wrong people.
+- **Every contact is verified individually**, and failures are retried once.
+  Re-running a job is safe — it just re-applies the same change.
+
+Keep the tab open while a large job runs; the chunks are driven from the page.
+The chat tells you the estimated time and warns you before you navigate away.
+
+### Smart Lists
+
+GoHighLevel does **not** expose saved Smart Lists on its API, so the assistant
+cannot open one by name. A Smart List is only saved filters, so there are two
+ways to act on one:
+
+1. Tell the assistant the list's filters. It reproduces them with
+   `count_contacts`, checks the total against the count you see in the UI, and
+   only then runs the job.
+2. Easier and exact: open the Smart List in GoHighLevel, select all, **Add Tag**
+   (e.g. `sdr ve`), then ask the assistant to work on that tag.
+
+The assistant will not guess a similar-looking audience, and it will not claim a
+change happened unless a tool actually made it.
 
 To enable it, add to Vercel → Settings → Environment Variables:
 

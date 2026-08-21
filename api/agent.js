@@ -99,19 +99,35 @@ function capStoredMessages(messages) {
   return messages.slice(cut);
 }
 const BULK_TOOLS = new Set(['bulk_update_contacts', 'bulk_tag_contacts']);
-const CONFIRM_RE = /^(yes|y|yeah|yep|confirm|confirmed|go ahead|do it|proceed|ok|okay|sure|approve|approved)\.?!?$/i;
+// "yes" is rarely typed alone — people write "yes do it", "ok go ahead",
+// "run it now". A message counts as a confirmation when it opens with an
+// affirmative and contains nothing but affirmatives and filler, so a pending
+// bulk job isn't left hanging over a wording difference.
+const AFFIRM_START_RE = /^(yes|y|yeah|yep|yup|ya|sure|ok|okay|k|confirm|confirmed|approve|approved|proceed|go|do|run|start|send)$/;
+const CONFIRM_WORD_RE = /^(yes|y|yeah|yep|yup|ya|sure|ok|okay|k|confirm|confirmed|confirming|approve|approved|proceed|go|ahead|do|it|this|that|please|run|start|send|now|them|all|of|for|and|thanks|thank|you|lets|let's)$/;
 
 function isConfirmMessage(text) {
-  return CONFIRM_RE.test(String(text || '').trim());
+  const cleaned = String(text || '').toLowerCase().replace(/[^a-z' ]+/g, ' ').trim();
+  if (!cleaned) return false;
+  const words = cleaned.split(/\s+/);
+  if (words.length > 10) return false;
+  if (!AFFIRM_START_RE.test(words[0])) return false;
+  return words.every(w => CONFIRM_WORD_RE.test(w));
 }
 
-function describeBulkAction(toolName, input) {
-  const target = input.tag
-    ? `all contacts with tag "${input.tag}"`
-    : `${(input.contactIds || []).length} contact(s)`;
+const FIELD_LABEL = { assignedTo: 'assigned owner', companyName: 'company', postalCode: 'postal code' };
+
+function describeBulkAction(toolName, input, total) {
+  let target;
+  if (total != null) target = `${total} contact(s)`;
+  else if (input.tag) target = `all contacts with tag "${input.tag}"`;
+  else if (Array.isArray(input.filters) && input.filters.length) target = 'the filtered audience';
+  else target = `${(input.contactIds || []).length} contact(s)`;
   if (toolName === 'bulk_update_contacts') {
-    const fields = input.fields ? JSON.stringify(input.fields) : 'fields';
-    return `update ${target} → ${fields}`;
+    const changes = Object.entries(input.fields || {})
+      .map(([k, v]) => `${FIELD_LABEL[k] || k} = "${v}"`)
+      .join(', ') || 'fields';
+    return `set ${changes} on ${target}`;
   }
   const mode = input.mode === 'remove' ? 'remove' : 'add';
   const tags = Array.isArray(input.tags) ? input.tags.join(', ') : String(input.tags || '');
@@ -119,11 +135,15 @@ function describeBulkAction(toolName, input) {
 }
 
 function formatBulkPreviewReply(previews) {
+  const notes = previews.flatMap(p => p.notes || []);
+  const detail = notes.length ? `\n${notes.join('\n')}` : '';
   if (previews.length === 1) {
-    return `Ready to ${describeBulkAction(previews[0].tool, previews[0].input)}.\n\nReply **yes** to start processing.`;
+    return `Ready to ${describeBulkAction(previews[0].tool, previews[0].input, previews[0].total)}.${detail}`
+      + '\n\nNothing has changed yet — reply **yes** to start.';
   }
-  const lines = previews.map((p, i) => `${i + 1}. ${describeBulkAction(p.tool, p.input)}`);
-  return `Ready to run ${previews.length} bulk jobs:\n${lines.join('\n')}\n\nReply **yes** to start ALL of them.`;
+  const lines = previews.map((p, i) => `${i + 1}. ${describeBulkAction(p.tool, p.input, p.total)}`);
+  return `Ready to run ${previews.length} bulk jobs:\n${lines.join('\n')}${detail}`
+    + '\n\nNothing has changed yet — reply **yes** to start ALL of them.';
 }
 
 function bulkJobFromResult(result) {
@@ -131,6 +151,33 @@ function bulkJobFromResult(result) {
   if (!(result.total == null || result.total > 0)) return null;
   return result.bulkJob;
 }
+
+const WRITE_TOOLS = new Set([
+  'bulk_update_contacts', 'bulk_tag_contacts', 'add_tags', 'remove_tags', 'update_contact',
+  'create_contact', 'delete_contact', 'create_opportunity', 'update_opportunity',
+  'delete_opportunity', 'add_note', 'create_task', 'update_task', 'send_message',
+  'book_appointment', 'add_to_workflow', 'remove_from_workflow', 'create_tag',
+]);
+
+// Phrases that assert the work is finished or under way.
+const CLAIMS_DONE_RE = /\b(i(?:'ve| have)\s+(?:now\s+)?(?:updated|assigned|tagged|queued|started|set|changed|added|removed|created|processed)|(?:has|have|is|are)\s+been\s+(?:updated|assigned|tagged|queued|started|set|changed|added|removed|created)|all\s+(?:\d[\d,]*|of\s+them)\s+(?:are|were|have been|now)|now\s+(?:processing|running|assigned|updated|queued)|job\s+(?:is\s+)?(?:queued|started|running)|successfully\s+(?:updated|assigned|tagged|queued|created|changed))/i;
+
+// A claim of completion is only legitimate if a write actually executed. This
+// catches the failure the user hits most: a confident "done!" when no tool ran.
+function claimsUnbackedWork(text, actions, bulkJobs) {
+  if (bulkJobs.length) return false;
+  if (actions.some(a => a.executed && WRITE_TOOLS.has(a.tool))) return false;
+  return CLAIMS_DONE_RE.test(String(text || ''));
+}
+
+const FOLLOW_THROUGH_NUDGE = `SYSTEM CHECK: your reply claims work was done, queued, or started, but no write tool executed in this turn — so NOTHING has actually changed in GoHighLevel.
+
+Do exactly one of these now:
+1. Call the tool that performs the work (use bulk_update_contacts / bulk_tag_contacts for more than ~3 contacts). If the user already approved it, pass confirmed=true.
+2. If you are waiting on the user's confirmation, say so plainly and state the exact number of contacts affected — do not describe it as done or in progress.
+3. If something is blocking you, state the blocker and ask ONE specific question.
+
+Never tell the user a change happened when it did not.`;
 
 const AVAILABLE_MODELS = [
   { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
@@ -183,12 +230,32 @@ What you CAN do (all via the GoHighLevel API):
 
 What you CANNOT do (a real GoHighLevel API limitation — be honest about this):
 - You cannot BUILD or configure new workflows/automations or Conversation AI bots via the API; that must be done in the GoHighLevel dashboard (Automation → Workflows). You CAN, however, enroll contacts into workflows that already exist, and tagging a contact often triggers their workflows.
+- You cannot READ a Smart List by name. GoHighLevel does not expose saved Smart Lists / contact views on the API. See the Smart List rules below for the two ways to work on one anyway.
+
+FOLLOW THROUGH — the user's #1 complaint is being told a job was done when it was not:
+- When the user gives you a job, DO the job in this same turn. Never reply with only a plan, an intention ("I'll go ahead and…", "let me start…"), or a promise about a later turn. Either a tool call happened or the work did not happen.
+- NEVER state or imply that something is done, queued, running, updated, assigned, or tagged unless a tool actually returned success for it in this conversation. If you did not call the tool, say plainly what you still need instead.
+- If a tool returns an error, report the error verbatim-ish and what you need to fix it. Do not paper over it, do not move on silently, and never summarise a failed job as done.
+- If you genuinely cannot proceed, end with exactly ONE specific question or ONE concrete instruction for the user. Never end a turn on a vague "let me know how you'd like to proceed".
+- A bulk job is only real once a bulk tool returned a queued job. Getting a CONFIRMATION REQUIRED preview means NOTHING has happened yet: relay the exact count to the user and wait for their yes.
+
+SMART LISTS (e.g. "the SDR VE smart list with 744 contacts"):
+- A Smart List is just saved filters, and the count the user quotes is your verification target. Reproduce it with count_contacts and compare the total to the number they gave you.
+- Getting the same total means you found the audience: pass the SAME filters (plus expectedTotal) to the bulk tool.
+- If you cannot match the count, do NOT guess and do NOT operate on a similar-looking audience. Tell the user the two ways forward, in one short message: (a) they tell you the exact filters on the Smart List, or (b) they open the Smart List in GoHighLevel, select all, Add Tag (e.g. "sdr ve") — then you target that tag, which is exact and instant.
+- Never assume a tag exists just because the Smart List has a similar name. Check with list_tags or count_contacts first.
+
+OWNERS / ASSIGNMENT:
+- "assigned owner", "owner", "assign to X" all mean the contact's assignedTo field, which needs a real user id. Use find_user to resolve a name like "kimberly" to that id (it errors with the actual user list if the name is unknown or ambiguous).
+- The bulk tool accepts a name in fields.assignedTo and resolves it for you, and refuses the job if the name matches no user — so never invent or guess a user id.
 
 Rules:
-- Use the read tools freely to look things up (search_contacts, search_by_tag, get_contact, list_pipelines, list_users, list_workflows, list_calendars, list_tags, list_custom_fields, search_opportunities, get_opportunity, get_notes, get_tasks, list_conversations, get_messages).
+- Use the read tools freely to look things up (search_contacts, search_by_tag, count_contacts, find_user, get_contact, list_pipelines, list_users, list_workflows, list_calendars, list_tags, list_custom_fields, search_opportunities, get_opportunity, get_notes, get_tasks, list_conversations, get_messages).
+- count_contacts is the cheapest, most reliable way to size ANY audience (it returns the exact total). Prefer it over search_by_tag when you only need a count or need to verify filters.
 - IMPORTANT: When searching for contacts by tag, ALWAYS use search_by_tag instead of search_contacts. search_contacts is capped at 20 results and uses free-text which misses contacts. search_by_tag paginates through ALL contacts with that tag. For multiple tags, pass allTags to get only contacts with ALL specified tags.
-- CRITICAL: To change MANY contacts at once (more than ~3) — e.g. set a source for everyone with a tag, or add/remove a tag in bulk — you MUST use bulk_update_contacts or bulk_tag_contacts. NEVER loop update_contact/add_tags/remove_tags one contact at a time for many contacts; that WILL time out the request. The bulk tools queue a background job that the dashboard processes automatically in chunks, so ONE confirmation handles any number of contacts.
-  - Do NOT call search_by_tag before a bulk action — it is slow and can time out the chat. Pass tag (+ allTags for AND filtering) directly to the bulk tool; the dashboard resolves targets in the background.
+- CRITICAL: To change MANY contacts at once (more than ~3) — e.g. set a source or an owner for a whole audience, or add/remove a tag in bulk — you MUST use bulk_update_contacts or bulk_tag_contacts. NEVER loop update_contact/add_tags/remove_tags one contact at a time for many contacts; that WILL time out the request. The bulk tools queue a background job that the dashboard processes automatically in chunks, so ONE confirmation handles any number of contacts.
+  - Do NOT call search_by_tag before a bulk action — it is slow and can time out the chat. Pass tag (+ allTags for AND filtering), or filters for a Smart List audience, directly to the bulk tool; the dashboard resolves targets in the background.
+  - When the user tells you how many contacts there are, pass that number as expectedTotal. The job is then rejected unless the audience matches exactly, which makes it impossible to update the wrong people.
   - Only pass contactIds if the user gave you a short explicit list (under ~20). Never pass hundreds of ids from a prior search.
   - After queueing, in ONE short sentence tell the user it's now processing with live progress. Do NOT call any tools to verify the results afterward and do NOT re-search — the dashboard handles it.
   - If the user asks again or asks to retry, ALWAYS create a fresh bulk job by calling the tool again. NEVER tell the user a previous job is "already processing" or "no need to re-run" — always re-queue.
@@ -481,18 +548,23 @@ module.exports = async function handler(req, res) {
       if (pendingList.length) {
         const confirmActions = [];
         const msgs = [];
+        const errors = [];
         for (const p of pendingList) {
           const result = await runTool(p.tool, { ...p.input, confirmed: true });
           const jobSpec = bulkJobFromResult(result);
           if (jobSpec) bulkJobs.push(jobSpec);
           if (result && result.message) msgs.push(result.message);
+          if (result && result.error) errors.push(String(result.error));
           confirmActions.push({ tool: p.tool, input: p.input, executed: !!(result && result.ok), preview: false });
         }
         await kvDel(`pending:${chatId}`);
         bulkJob = bulkJobs[0] || null;
-        const reply = bulkJobs.length > 1
-          ? `Queued ${bulkJobs.length} bulk jobs — the dashboard is processing them one after another below.`
-          : (msgs[0] || 'Bulk job queued.');
+        // Never claim a queue that didn't happen — surface the real reason.
+        const reply = !bulkJobs.length
+          ? `⚠️ Nothing was queued. ${errors[0] || 'The job could no longer be validated — please re-state what you want changed.'}`
+          : (bulkJobs.length > 1
+            ? `Queued ${bulkJobs.length} bulk jobs — the dashboard is processing them one after another below.`
+            : (msgs[0] || 'Bulk job queued.'));
         messages.push({ role: 'assistant', content: reply });
         await kvSet(kvKey, capStoredMessages(messages), { ex: KV_TTL });
         sendJson(200, {
@@ -537,6 +609,9 @@ module.exports = async function handler(req, res) {
       });
     };
 
+    // The follow-through check re-prompts the model at most once per request.
+    let followThroughChecked = false;
+
     for (let step = 0; step < MAX_STEPS; step++) {
       // Don't start a model round-trip we can't finish before the budget runs
       // out; return cleanly so the client always gets parseable JSON.
@@ -574,6 +649,17 @@ module.exports = async function handler(req, res) {
           .map(b => b.text)
           .join('\n')
           .trim();
+
+        // Don't ship a reply that claims work no tool performed — send it back
+        // to do the job (or to be honest about what it needs) instead.
+        if (!followThroughChecked && claimsUnbackedWork(textOut, actions, bulkJobs)
+            && deadlineAt - Date.now() >= MIN_STEP_BUDGET_MS) {
+          followThroughChecked = true;
+          console.log('[agent] follow-through nudge', JSON.stringify({ chatId, reply: textOut.slice(0, 160) }));
+          messages.push({ role: 'user', content: FOLLOW_THROUGH_NUDGE });
+          continue;
+        }
+
         await kvSet(kvKey, capStoredMessages(messages), { ex: KV_TTL });
         sendJson(200, {
           ok: true,
@@ -609,7 +695,17 @@ module.exports = async function handler(req, res) {
       const bulkPreviews = [];
       for (const { block, result } of executed) {
         const didRun = !(result && result.preview) && !(result && result.error);
-        actions.push({ tool: block.name, input: block.input, executed: didRun, preview: !!(result && result.preview) });
+        actions.push({
+          tool: block.name,
+          input: block.input,
+          executed: didRun,
+          preview: !!(result && result.preview),
+          error: result && result.error ? String(result.error) : undefined,
+          // Vetted job spec (owner resolved, audience counted) so the dashboard
+          // runs exactly what the user was shown when they confirm.
+          job: (result && result.previewJob) || undefined,
+          total: result && result.total != null ? result.total : undefined,
+        });
         const jobSpec = bulkJobFromResult(result);
         if (jobSpec) {
           bulkJobs.push(jobSpec);
@@ -617,7 +713,13 @@ module.exports = async function handler(req, res) {
           if (result.message) bulkReply = result.message;
         }
         if (result && result.preview && BULK_TOOLS.has(block.name)) {
-          bulkPreviews.push({ tool: block.name, input: block.input || result.proposed || {} });
+          bulkPreviews.push({
+            tool: block.name,
+            input: block.input || result.proposed || {},
+            job: result.previewJob || null,
+            total: result.total != null ? result.total : null,
+            notes: result.notes || null,
+          });
         }
         toolResults.push({
           type: 'tool_result',
@@ -671,3 +773,8 @@ module.exports = async function handler(req, res) {
     if (budgetTimer) { clearTimeout(budgetTimer); budgetTimer = null; }
   }
 };
+
+// Exposed for tests; Vercel only ever invokes the handler above.
+module.exports.isConfirmMessage = isConfirmMessage;
+module.exports.claimsUnbackedWork = claimsUnbackedWork;
+module.exports.describeBulkAction = describeBulkAction;

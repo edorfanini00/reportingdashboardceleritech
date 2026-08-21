@@ -3,7 +3,10 @@
 // spec, `resolve` finds target ids page by page, `process` updates a few
 // contacts per call (slowly, verified per contact). No database required.
 const { ghlConfigured } = require('./_lib/ghl-client');
-const { VALID_OPS, MAX_CHUNK, resolveTagPage, processChunk, bulkQueuedMessage } = require('./_lib/bulk');
+const {
+  VALID_OPS, MAX_CHUNK, resolveTargetPage, countTargets, validateJob,
+  processChunk, bulkQueuedMessage,
+} = require('./_lib/bulk');
 
 async function readBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -40,8 +43,9 @@ module.exports = async function handler(req, res) {
       const contactIds = Array.isArray(body.contactIds) && body.contactIds.length
         ? [...new Set(body.contactIds.filter(Boolean))]
         : null;
-      if (!contactIds && !body.tag) {
-        res.status(400).json({ ok: false, error: 'Provide contactIds or a tag to match.' });
+      const hasFilters = Array.isArray(body.filters) && body.filters.length;
+      if (!contactIds && !body.tag && !hasFilters && !body.query) {
+        res.status(400).json({ ok: false, error: 'Provide contactIds, a tag, or filters to match.' });
         return;
       }
       const spec = {
@@ -50,6 +54,8 @@ module.exports = async function handler(req, res) {
         tags: body.tags || null,
         tag: body.tag || null,
         allTags: body.allTags || null,
+        filters: hasFilters ? body.filters : null,
+        query: body.query || null,
         contactIds,
         total: contactIds ? contactIds.length : null,
       };
@@ -57,14 +63,41 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    // One page of tag-based target resolution.
+    // Preflight the payload once (resolve owner names, reject unknown fields)
+    // so a broken job fails before it touches a single contact.
+    if (body.action === 'validate') {
+      try {
+        const out = await validateJob(body.op, { fields: body.fields, tags: body.tags });
+        res.status(200).json({ ok: true, ...out });
+      } catch (err) {
+        res.status(200).json({ ok: false, error: String((err && err.message) || err) });
+      }
+      return;
+    }
+
+    // Exact size of the target audience, before writing anything.
+    if (body.action === 'count') {
+      const total = await countTargets({
+        tag: body.tag, filters: body.filters, query: body.query,
+      });
+      res.status(200).json({ ok: true, total });
+      return;
+    }
+
+    // One page of target resolution (by tag, advanced filters, or free text).
     if (body.action === 'resolve') {
-      if (!body.tag) {
-        res.status(400).json({ ok: false, error: 'Missing tag.' });
+      const hasFilters = Array.isArray(body.filters) && body.filters.length;
+      if (!body.tag && !hasFilters && !body.query) {
+        res.status(400).json({ ok: false, error: 'Missing tag, filters, or query.' });
         return;
       }
       const page = Math.max(1, Number(body.page) || 1);
-      const out = await resolveTagPage(body.tag, page, body.allTags);
+      const out = await resolveTargetPage({
+        tag: body.tag,
+        allTags: body.allTags,
+        filters: hasFilters ? body.filters : null,
+        query: body.query,
+      }, page);
       res.status(200).json({ ok: true, ...out });
       return;
     }
