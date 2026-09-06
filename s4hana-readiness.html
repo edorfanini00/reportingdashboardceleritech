@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>S/4HANA Readiness Guide | CeleriTech</title>
+  <meta name="description" content="A short SAP S/4HANA readiness guide for teams still running ECC or SAP R/3." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;500;600;700&family=Source+Code+Pro:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --navy:#061b31;
+      --slate:#64748d;
+      --label:#273951;
+      --purple:#533afd;
+      --purple-dark:#4434d4;
+      --border:#e5edf5;
+      --orange:#f97316;
+      --orange-dark:#ea580c;
+      --bg:#ffffff;
+      --soft:#f6f9fc;
+      --dark:#1c1e54;
+      --green:#15be53;
+      --shadow:rgba(50,50,93,.25) 0 30px 45px -30px, rgba(0,0,0,.1) 0 18px 36px -18px;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0;
+      font-family:'Source Sans 3', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color:var(--navy);
+      background:
+        radial-gradient(circle at 8% 0%, rgba(249,115,22,.14), transparent 32%),
+        radial-gradient(circle at 78% 2%, rgba(83,58,253,.12), transparent 34%),
+        linear-gradient(180deg,#fff 0%,#f8fbff 58%,#eef4fb 100%);
+      font-feature-settings:"ss01";
+    }
+    a { color:inherit; }
+    .wrap { width:min(1120px, calc(100% - 40px)); margin:0 auto; }
+    header { padding:26px 0 14px; }
+    nav { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+    .brand { display:flex; align-items:center; gap:12px; font-weight:700; letter-spacing:.02em; }
+    .mark { width:34px; height:34px; border-radius:8px; display:grid; place-items:center; color:#fff; background:linear-gradient(135deg,var(--orange),#ffb05c); box-shadow:0 12px 28px rgba(249,115,22,.22); font-weight:700; }
+    .nav-note { font-size:14px; color:var(--slate); }
+    .hero { padding:64px 0 42px; display:grid; grid-template-columns:1.05fr .95fr; gap:44px; align-items:center; }
+    .eyebrow { display:inline-flex; align-items:center; gap:8px; margin-bottom:20px; padding:6px 10px; border:1px solid rgba(249,115,22,.24); border-radius:999px; background:rgba(255,255,255,.72); color:var(--orange-dark); font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .dot { width:7px; height:7px; border-radius:999px; background:var(--green); box-shadow:0 0 0 5px rgba(21,190,83,.16); }
+    h1 { margin:0; max-width:690px; font-size:clamp(40px, 6vw, 72px); line-height:.98; letter-spacing:-1.6px; font-weight:300; color:var(--navy); }
+    .lead { margin:24px 0 0; max-width:610px; font-size:21px; line-height:1.42; color:var(--slate); font-weight:300; }
+    .actions { display:flex; flex-wrap:wrap; gap:14px; margin-top:32px; align-items:center; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:10px; min-height:48px; padding:13px 20px; border-radius:7px; border:1px solid transparent; text-decoration:none; font-size:17px; font-weight:600; transition:.18s ease; }
+    .btn-primary { background:var(--orange); color:#fff; box-shadow:0 14px 28px rgba(249,115,22,.24); }
+    .btn-primary:hover { background:var(--orange-dark); transform:translateY(-1px); }
+    .btn-secondary { background:#fff; color:var(--purple); border-color:#d6d9fc; }
+    .btn-secondary:hover { background:rgba(83,58,253,.05); }
+    .micro { font-size:13px; color:var(--slate); }
+    .card { background:rgba(255,255,255,.86); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); }
+    .audit { padding:24px; position:relative; overflow:hidden; }
+    .audit:before { content:""; position:absolute; inset:0 0 auto; height:5px; background:linear-gradient(90deg,var(--orange),#f96bee,var(--purple)); }
+    .audit h2 { margin:4px 0 8px; font-size:24px; line-height:1.1; letter-spacing:-.3px; font-weight:400; }
+    .audit p { margin:0; color:var(--slate); line-height:1.45; }
+    .checks { display:grid; gap:12px; margin-top:22px; }
+    .check { display:grid; grid-template-columns:30px 1fr; gap:12px; align-items:start; padding:14px; border:1px solid #edf2f7; border-radius:9px; background:#fff; }
+    .check b { display:block; font-size:15px; color:var(--label); margin-bottom:2px; }
+    .check span:last-child { color:var(--slate); font-size:14px; line-height:1.35; }
+    .icon { width:30px; height:30px; border-radius:7px; background:rgba(249,115,22,.1); color:var(--orange); display:grid; place-items:center; font-weight:700; }
+    .section { padding:34px 0 70px; }
+    .section-title { max-width:720px; margin-bottom:24px; }
+    .section-title p { color:var(--slate); font-size:18px; line-height:1.45; margin:10px 0 0; }
+    h3 { margin:0; font-size:34px; line-height:1.05; font-weight:300; letter-spacing:-.7px; }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
+    .step { padding:22px; min-height:190px; }
+    .step small { display:inline-block; font-family:'Source Code Pro', ui-monospace, monospace; color:var(--orange-dark); margin-bottom:14px; font-size:12px; font-weight:700; }
+    .step h4 { margin:0 0 8px; font-size:22px; line-height:1.12; font-weight:400; letter-spacing:-.2px; }
+    .step p { margin:0; color:var(--slate); line-height:1.43; font-size:16px; }
+    .cta { margin:0 auto 70px; padding:34px; display:grid; grid-template-columns:1fr auto; gap:24px; align-items:center; background:linear-gradient(135deg,var(--dark),#101a46); color:#fff; border-radius:16px; box-shadow:0 24px 60px rgba(28,30,84,.24); }
+    .cta h3 { color:#fff; }
+    .cta p { color:rgba(255,255,255,.72); margin:10px 0 0; font-size:18px; line-height:1.42; }
+    footer { padding:24px 0 36px; color:#7b8aa0; font-size:13px; }
+    @media (max-width:860px) {
+      .wrap { width:min(100% - 28px, 1120px); }
+      .hero { grid-template-columns:1fr; padding-top:38px; gap:30px; }
+      .grid { grid-template-columns:1fr; }
+      .cta { grid-template-columns:1fr; padding:26px; }
+      .nav-note { display:none; }
+      h1 { letter-spacing:-1px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="wrap">
+    <nav>
+      <div class="brand"><span class="mark">C</span><span>CeleriTech</span></div>
+      <div class="nav-note">SAP S/4HANA readiness resource</div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="wrap hero">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> Resource sent instead of booking</div>
+        <h1>Before a sales call, check what has to move first.</h1>
+        <p class="lead">SAP ECC still runs the business. S/4HANA is the date on the wall. This short resource helps your team sort the first migration questions before you put time on a calendar.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="https://drive.google.com/drive/folders/1rvcdxFV5wwRgAgyVQGwArpS7pwPagEVI?usp=sharing" target="_blank" rel="noopener">Download the S/4HANA resource →</a>
+          <span class="micro">Opens the CeleriTech resource file.</span>
+        </div>
+      </div>
+
+      <aside class="card audit" aria-label="Resource overview">
+        <h2>What this helps you decide</h2>
+        <p>Use it to prepare the internal conversation before involving Sales or an SDR.</p>
+        <div class="checks">
+          <div class="check"><span class="icon">1</span><span><b>Current system fit</b><span>Confirm whether ECC or R/3 is the system that creates the migration need.</span></span></div>
+          <div class="check"><span class="icon">2</span><span><b>Deadline pressure</b><span>Separate teams with a fixed date from teams still mapping options.</span></span></div>
+          <div class="check"><span class="icon">3</span><span><b>Buying group</b><span>Know who should be in the room before a technical assessment starts.</span></span></div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="wrap section">
+      <div class="section-title">
+        <h3>Read this if the calendar did not make sense yet.</h3>
+        <p>The next useful step is not always a meeting. If your team is still confirming ownership, scope, or timeline, this page gives you something practical to take back internally.</p>
+      </div>
+      <div class="grid">
+        <article class="card step">
+          <small>FIRST</small>
+          <h4>Write down the ECC/R/3 dependency.</h4>
+          <p>Name the business process that would break if the system moved too fast. Finance close, warehouse, production, procurement: pick the real one.</p>
+        </article>
+        <article class="card step">
+          <small>SECOND</small>
+          <h4>Put a date beside the pressure.</h4>
+          <p>A migration with a date is a project. A migration without a date is still discovery. Treat them differently.</p>
+        </article>
+        <article class="card step">
+          <small>THIRD</small>
+          <h4>Bring the right person in early.</h4>
+          <p>The best first call has someone who owns the system, someone who owns the process, and someone who can approve the next step.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="wrap cta">
+      <div>
+        <h3>Take the guide first. Book later if the migration is real.</h3>
+        <p>No rejection, no dead end. You still get a useful next step while the sales team stays focused on qualified migration conversations.</p>
+      </div>
+      <a class="btn btn-primary" href="https://drive.google.com/drive/folders/1rvcdxFV5wwRgAgyVQGwArpS7pwPagEVI?usp=sharing" target="_blank" rel="noopener">Download resource</a>
+    </section>
+  </main>
+
+  <footer class="wrap">© CeleriTech. Built for SAP S/4HANA readiness routing.</footer>
+</body>
+</html>
